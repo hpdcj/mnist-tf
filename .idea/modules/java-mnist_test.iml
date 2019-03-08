@@ -15,6 +15,7 @@
     <orderEntry type="module" module-name="java-mnist_main" />
     <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow:1.13.1" level="project" />
+    <orderEntry type="library" name="Gradle: org.apache.commons:commons-lang3:3.0" level="project" />
     <orderEntry type="library" name="Gradle: junit:junit:4.12" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow:1.13.1" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow_jni:1.13.1" level="project" />
