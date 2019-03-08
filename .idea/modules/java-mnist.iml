@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module external.linked.project.id="java-mnist" external.linked.project.path="$MODULE_DIR$/../../java-mnist" external.root.project.path="$MODULE_DIR$/../../java-mnist" external.system.id="GRADLE" external.system.module.group="pl.icm.lgorski" external.system.module.version="1.0-SNAPSHOT" type="JAVA_MODULE" version="4">
+  <component name="ExternalSystem" externalSystem="GRADLE" externalSystemModuleGroup="pl.icm.lgorski" externalSystemModuleVersion="1.0-SNAPSHOT" linkedProjectId="java-mnist" linkedProjectPath="$MODULE_DIR$/../../java-mnist" rootProjectPath="$MODULE_DIR$/../../java-mnist" />
+  <component name="NewModuleRootManager" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$/../../java-mnist">
+      <excludeFolder url="file://$MODULE_DIR$/../../java-mnist/.gradle" />
+      <excludeFolder url="file://$MODULE_DIR$/../../java-mnist/build" />
+      <excludeFolder url="file://$MODULE_DIR$/../../java-mnist/out" />
+    </content>
+    <orderEntry type="jdk" jdkName="10 (1)" jdkType="JavaSDK" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

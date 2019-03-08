@@ -1,0 +1,24 @@
+Alternative solutions:
+
+1. Start PCJ
+2. Create and train a graph with Tensorflow and safe to protobuf
+3. Read graph in Java v
+5. Communicate to average weights
+6. ???
+7. Profit
+
+
+
+Possibilities:
+
+- generate graph with keras, save model to java, load from java with deeplearning4j, train with java
+- generate graph with tf, save it to java, load with tf java api, train with java
+- generate grapg with tf, train with distributed tf
+- generate graph with keras, train with horovod
+- generate graph with keras, train
+
+
+
+apples to apples =
+- generate graph with tf, save model, read it with java api, start timing, distributed gradient with java, stop timing
+- generate graph with tf and (start timing) train with horovod (stop timing)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.main.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.test.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/mnist-java.main.iml" filepath="$PROJECT_DIR$/.idea/modules/mnist-java.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/mnist-java.test.iml" filepath="$PROJECT_DIR$/.idea/modules/mnist-java.test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/mnit-tf.iml" filepath="$PROJECT_DIR$/mnit-tf.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/pl.icm.lgorski.java-mnist.main.iml" filepath="$PROJECT_DIR$/.idea/modules/pl.icm.lgorski.java-mnist.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/pl.icm.lgorski.java-mnist.test.iml" filepath="$PROJECT_DIR$/.idea/modules/pl.icm.lgorski.java-mnist.test.iml" />
+    </modules>
+  </component>
+</project>

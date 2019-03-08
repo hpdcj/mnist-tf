@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <bytecodeTargetLevel>
+      <module name="java-mnist.main" target="1.10" />
+      <module name="java-mnist.test" target="1.10" />
+      <module name="mnist-java.main" target="1.8" />
+      <module name="mnist-java.test" target="1.8" />
+      <module name="pl.icm.lgorski.java-mnist.main" target="1.10" />
+      <module name="pl.icm.lgorski.java-mnist.test" target="1.10" />
+      <module name="pl.icm.lgorski.mnist-java.main" target="1.10" />
+      <module name="pl.icm.lgorski.mnist-java.test" target="1.10" />
+    </bytecodeTargetLevel>
+  </component>
+</project>
