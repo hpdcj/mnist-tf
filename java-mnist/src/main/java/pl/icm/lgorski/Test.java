@@ -1,5 +1,7 @@
 package pl.icm.lgorski;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.tensorflow.Graph;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
@@ -14,9 +16,12 @@ import java.util.stream.StreamSupport;
 //cf. https://github.com/tensorflow/models/blob/master/samples/languages/java/training/src/main/java/Train.java
 public class Test {
 
-
+    @RequiredArgsConstructor
     private static class MnistImage {
-
+        @Getter
+        private final Tensor<Float> pixels;
+        @Getter
+        private final int label;
     }
     private static void showOperations (Graph graph) {
         var iter = graph.operations();

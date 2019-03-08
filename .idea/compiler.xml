@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile default="true" name="Default" enabled="true" />
+    </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="java-mnist.main" target="1.10" />
       <module name="java-mnist.test" target="1.10" />
+      <module name="java-mnist_main" target="1.10" />
+      <module name="java-mnist_test" target="1.10" />
       <module name="mnist-java.main" target="1.8" />
       <module name="mnist-java.test" target="1.8" />
       <module name="pl.icm.lgorski.java-mnist.main" target="1.10" />

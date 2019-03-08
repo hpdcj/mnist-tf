@@ -3,18 +3,22 @@
   <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_10">
     <output-test url="file://$MODULE_DIR$/../../java-mnist/build/classes/java/test" />
     <exclude-output />
+    <content url="file://$MODULE_DIR$/../../java-mnist/build/generated/sources/annotationProcessor/java/test">
+      <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/build/generated/sources/annotationProcessor/java/test" isTestSource="true" generated="true" />
+    </content>
     <content url="file://$MODULE_DIR$/../../java-mnist/src/test">
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/test/java" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/test/resources" type="java-test-resource" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="pl.icm.lgorski.java-mnist.main" />
+    <orderEntry type="module" module-name="java-mnist_main" />
+    <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow:1.13.1" level="project" />
     <orderEntry type="library" name="Gradle: junit:junit:4.12" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow:1.13.1" level="project" />
     <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow_jni:1.13.1" level="project" />
     <orderEntry type="library" name="Gradle: org.hamcrest:hamcrest-core:1.3" level="project" />
   </component>
-  <component name="TestModuleProperties" production-module="java-mnist.main" />
+  <component name="TestModuleProperties" production-module="java-mnist_main" />
 </module>
