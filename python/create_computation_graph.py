@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     with tf.name_scope("train"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-        training_op = optimizer.minimize(loss)
+        training_op = optimizer.minimize(loss, name='optimize')
 
     with tf.name_scope("eval"):
         correct = tf.nn.in_top_k(logits, y, 1)
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     init = tf.global_variables_initializer()
 
-    with open ('../graph.pb', 'wb') as f:
+    with open ('graph.pb', 'wb') as f:
         f.write(tf.get_default_graph().as_graph_def().SerializeToString())
 
     #

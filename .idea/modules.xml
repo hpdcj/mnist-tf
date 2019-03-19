@@ -3,12 +3,8 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.iml" group="java-mnist" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.main.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.main.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist.test.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist.test.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist_main.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist_main.iml" group="java-mnist" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/java-mnist_test.iml" filepath="$PROJECT_DIR$/.idea/modules/java-mnist_test.iml" group="java-mnist" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/mnist-java.main.iml" filepath="$PROJECT_DIR$/.idea/modules/mnist-java.main.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/mnist-java.test.iml" filepath="$PROJECT_DIR$/.idea/modules/mnist-java.test.iml" />
       <module fileurl="file://$PROJECT_DIR$/mnit-tf.iml" filepath="$PROJECT_DIR$/mnit-tf.iml" />
     </modules>
   </component>

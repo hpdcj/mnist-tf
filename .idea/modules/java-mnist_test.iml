@@ -10,7 +10,7 @@
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/test/java" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/test/resources" type="java-test-resource" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="10 (1)" jdkType="JavaSDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="java-mnist_main" />
     <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />
