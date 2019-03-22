@@ -142,10 +142,14 @@ public class MnistGradientDescent implements StartPoint {
 
     @Override
     public void main() throws Throwable {
+        myId = PCJ.myId();
+        threadCount = PCJ.threadCount();
+
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
         final var trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")));
         final var testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")));
 
+        var trainImagesSlice = trainImages.subList(BATCH_SIZE * myId, BATCH_SIZE * (myId + 1));
         var trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
         Collections.shuffle(trainImagesBatches);
         final var testImagesBatches = batchMnist(testImages, 1);
@@ -164,7 +168,7 @@ public class MnistGradientDescent implements StartPoint {
                         .addTarget("train/optimize")
                         .run();
                 updateLayersWeights(sess, layersWithWeights);
-                List<LayerWeights> reduced = performCommunication (layersWithWeights);
+                performCommunication ();
             });
             var stop = System.nanoTime();
             System.out.println("Time = "  + (stop - start)*1e-9);
@@ -173,19 +177,53 @@ public class MnistGradientDescent implements StartPoint {
 
     @Storage(MnistGradientDescent.class)
     enum Shared {
-        layersWithWeights;
+        layersWeightsCommunicated,
     }
     private List<LayerWeights> layersWithWeights;
 
-    private List<LayerWeights> performCommunication(List<LayerWeights> layersWithWeights) {
-        //interthread-summation
+    private List<float[]> layersWeightsCommunicated;
+    int threadCount;
+    int myId;
 
-        if (PCJ.myId() == 0) {
-            for (var layer : layersWithWeights) {
-                layer.getWeights();
+    private void performCommunication() {
+        PCJ.barrier();
+        allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+        divideByThreadCount();
+    }
+
+    private void allToAllHypercube() {
+        final int d = Integer.numberOfTrailingZeros(threadCount);
+        for (int i = 0; i < d; i++) {
+            int partner = myId ^ (1 << i);
+            var rawWeights = layersWithWeights.stream()
+                    .map(LayerWeights::getWeights)
+                    .map(FloatBuffer::array)
+                    .collect(Collectors.toList());
+            PCJ.asyncPut(rawWeights, partner, Shared.layersWeightsCommunicated);
+            PCJ.waitFor(Shared.layersWeightsCommunicated);
+            addCommunicatedToLayers();
+            PCJ.barrier();
+        }
+    }
+
+    private void addCommunicatedToLayers() {
+        for (int layer = 0; layer < layersWithWeights.size(); layer++) {
+            float[] weightsArray = layersWithWeights.get(layer).getWeights().array();
+            float[] communicatedWeightsArray = layersWeightsCommunicated.get(layer);
+            for (int i = 0; i < weightsArray.length; i++) {
+                weightsArray[i] += communicatedWeightsArray[i];
             }
         }
-        return null;
+    }
+
+
+    private void divideByThreadCount() {
+        for (var layer : layersWithWeights) {
+            float[] weightsArray = layer.getWeights().array();
+            for (int i = 0; i < weightsArray.length; i++) {
+                weightsArray[i] /= threadCount;
+            }
+        }
     }
 
     public static void main (String[] args) throws IOException {
