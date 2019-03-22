@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.ArrayUtils;
+import org.pcj.*;
 import org.tensorflow.Graph;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
@@ -21,10 +22,14 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 //cf. https://github.com/tensorflow/models/blob/master/samples/languages/java/training/src/main/java/Train.java
-public class Test {
+
+@RegisterStorage(MnistGradientDescent.Shared.class)
+public class MnistGradientDescent implements StartPoint {
 
     private static final int BATCH_SIZE = 100;
     private static final int IMAGE_SIZE = 28*28;
+
+
 
     @RequiredArgsConstructor
     private static class MnistImage {
@@ -56,7 +61,7 @@ public class Test {
         }
     }
 
-    private static List<MnistImage> readMnistImages (List<String> lines) {
+    private List<MnistImage> readMnistImages (List<String> lines) {
         return lines.stream()
                 .map(line -> line.split(" "))
                 .map( numbers -> {
@@ -67,14 +72,14 @@ public class Test {
                 .collect(Collectors.toList());
     }
 
-    private static List<MnistImageBatch> batchMnist (List<MnistImage> images, int batchSize) {
+    private List<MnistImageBatch> batchMnist (List<MnistImage> images, int batchSize) {
         return ListUtils.partition(images, batchSize)
                 .stream()
-                .map(Test::processBatch)
+                .map(this::processBatch)
                 .collect(Collectors.toList());
     }
 
-    private static MnistImageBatch processBatch(List<MnistImage> currentBatch) {
+    private MnistImageBatch processBatch(List<MnistImage> currentBatch) {
         int numberOfElements = currentBatch.size();
         IntBuffer ys = IntBuffer.allocate(numberOfElements);
         FloatBuffer xs = FloatBuffer.allocate(numberOfElements * IMAGE_SIZE);
@@ -93,14 +98,14 @@ public class Test {
         return new MnistImageBatch(tensorYs, tensorXs);
     }
 
-    private static void showOperations (Graph graph) {
+    private void showOperations (Graph graph) {
         var iter = graph.operations();
         while (iter.hasNext()) {
             System.out.println(""+iter.next());
         }
     }
 
-    public static void updateLayersWeights (Session session, List<LayerWeights> weights) {
+    public void updateLayersWeights (Session session, List<LayerWeights> weights) {
         var layerNames = weights.stream()
                 .map(LayerWeights::getLayerName)
                 .toArray(String[]::new);
@@ -112,7 +117,7 @@ public class Test {
         });
     }
 
-    private static List<LayerWeights> prepareLayerWeights(Session session, String[] layerNames) {
+    private List<LayerWeights> prepareLayerWeights(Session session, String[] layerNames) {
         var resultTensors = getTensorsForLayers(session, layerNames);
         final var i = new AtomicInteger();
         return resultTensors.stream()
@@ -121,7 +126,7 @@ public class Test {
 
     }
 
-    private static List<Tensor<?>> getTensorsForLayers(Session session, String[] layerNames) {
+    private List<Tensor<?>> getTensorsForLayers(Session session, String[] layerNames) {
         var runner = session.runner();
         for (var layerName : layerNames) {
             runner = runner.fetch(layerName);
@@ -129,13 +134,14 @@ public class Test {
         return runner.run();
     }
 
-    private static LayerWeights layerWeightsForTensor(String name, Tensor<?> tensor) {
+    private LayerWeights layerWeightsForTensor(String name, Tensor<?> tensor) {
         long[] size = tensor.shape();
         var totalSize = Arrays.stream(size).reduce(Math::multiplyExact);
         return new LayerWeights(name, (int)totalSize.getAsLong());
     }
 
-    public static void main (String[] args) throws IOException {
+    @Override
+    public void main() throws Throwable {
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
         final var trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")));
         final var testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")));
@@ -145,12 +151,12 @@ public class Test {
         final var testImagesBatches = batchMnist(testImages, 1);
 
         try (Graph graph = new Graph();
-        Session sess = new Session((graph))) {
+             Session sess = new Session((graph))) {
             graph.importGraphDef(graphDef);
             sess.runner().addTarget("init").run();
 
             String[] layerNames = {"hidden1/weights", "hidden1/biases", "hidden2/weights", "hidden2/biases"};
-            var layersWithWeights = prepareLayerWeights (sess, layerNames);
+            layersWithWeights = prepareLayerWeights (sess, layerNames);
             var start = System.nanoTime();
             testImagesBatches.forEach( batch -> {
                 sess.runner().feed("X", batch.getPixels())
@@ -158,11 +164,34 @@ public class Test {
                         .addTarget("train/optimize")
                         .run();
                 updateLayersWeights(sess, layersWithWeights);
+                List<LayerWeights> reduced = performCommunication (layersWithWeights);
             });
             var stop = System.nanoTime();
             System.out.println("Time = "  + (stop - start)*1e-9);
         }
     }
+
+    @Storage(MnistGradientDescent.class)
+    enum Shared {
+        layersWithWeights;
+    }
+    private List<LayerWeights> layersWithWeights;
+
+    private List<LayerWeights> performCommunication(List<LayerWeights> layersWithWeights) {
+        //interthread-summation
+
+        if (PCJ.myId() == 0) {
+            for (var layer : layersWithWeights) {
+                layer.getWeights().
+            }
+        }
+    }
+
+    public static void main (String[] args) throws IOException {
+        PCJ.start(MnistGradientDescent.class, new NodesDescription("../nodes.txt"));
+    }
+
+
 
 
 }
