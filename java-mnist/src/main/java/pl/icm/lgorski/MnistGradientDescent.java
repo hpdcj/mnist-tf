@@ -182,9 +182,10 @@ public class MnistGradientDescent implements StartPoint {
 
         if (PCJ.myId() == 0) {
             for (var layer : layersWithWeights) {
-                layer.getWeights().
+                layer.getWeights();
             }
         }
+        return null;
     }
 
     public static void main (String[] args) throws IOException {
