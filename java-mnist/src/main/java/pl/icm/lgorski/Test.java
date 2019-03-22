@@ -8,18 +8,15 @@ import org.tensorflow.Graph;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
 
-import java.io.*;
+import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -46,18 +43,19 @@ public class Test {
 
     }
 
-    private static class LayerWeights <FloatArray> {
+    private static class LayerWeights {
         @Getter
-        private final FloatArray weights;
+        private final FloatBuffer weights;
 
         @Getter
         private final String layerName;
 
-        public LayerWeights(String layerName, Supplier<FloatArray> arrayInitializer) {
+        public LayerWeights(String layerName, int size){
+            weights = FloatBuffer.allocate(size);
             this.layerName = layerName;
-            weights = arrayInitializer.get();
         }
     }
+
     private static List<MnistImage> readMnistImages (List<String> lines) {
         return lines.stream()
                 .map(line -> line.split(" "))
@@ -108,8 +106,9 @@ public class Test {
                 .toArray(String[]::new);
         var resultTensors = getTensorsForLayers(session, layerNames);
         IntStream.range(0, weights.size()).forEach( i -> {
-            FloatBuffer buffer = FloatBuffer.allocate(784*300);
-            resultTensors.get(i).writeTo(buffer);//copyTo(weights.get(i).getWeights());
+            var weightsBuffer = weights.get(i).getWeights();
+            weightsBuffer.clear();
+            resultTensors.get(i).writeTo(weightsBuffer);
         });
     }
 
@@ -132,15 +131,8 @@ public class Test {
 
     private static LayerWeights layerWeightsForTensor(String name, Tensor<?> tensor) {
         long[] size = tensor.shape();
-        if (size.length == 1) {
-            long dim = size[0];
-            return new LayerWeights(name, () -> new float[(int)dim]);
-        } else if (size.length == 2) {
-            long dimX = size[0], dimY = size[1];
-            return new LayerWeights(name, () -> new float[(int)dimX][(int)dimY]);
-        } else {
-            throw new RuntimeException("Unsupported tensor shape");
-        }
+        var totalSize = Arrays.stream(size).reduce(Math::multiplyExact);
+        return new LayerWeights(name, (int)totalSize.getAsLong());
     }
 
     public static void main (String[] args) throws IOException {
