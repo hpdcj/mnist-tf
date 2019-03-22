@@ -18,7 +18,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 //cf. https://github.com/tensorflow/models/blob/master/samples/languages/java/training/src/main/java/Train.java
 public class Test {
@@ -43,19 +46,16 @@ public class Test {
 
     }
 
-    private static class LayerWeights {
+    private static class LayerWeights <FloatArray> {
         @Getter
-        private final int dimX;
-        @Getter
-        private final int dimY;
+        private final FloatArray weights;
 
         @Getter
-        private final float[][] weights;
+        private final String layerName;
 
-        public LayerWeights(int dimX, int dimY) {
-            this.dimX = dimX;
-            this.dimY = dimY;
-            weights = new float[dimX][dimY];
+        public LayerWeights(String layerName, Supplier<FloatArray> arrayInitializer) {
+            this.layerName = layerName;
+            weights = arrayInitializer.get();
         }
     }
     private static List<MnistImage> readMnistImages (List<String> lines) {
@@ -102,6 +102,47 @@ public class Test {
         }
     }
 
+    public static void updateLayersWeights (Session session, List<LayerWeights> weights) {
+        var layerNames = weights.stream()
+                .map(LayerWeights::getLayerName)
+                .toArray(String[]::new);
+        var resultTensors = getTensorsForLayers(session, layerNames);
+        IntStream.range(0, weights.size()).forEach( i -> {
+            FloatBuffer buffer = FloatBuffer.allocate(784*300);
+            resultTensors.get(i).writeTo(buffer);//copyTo(weights.get(i).getWeights());
+        });
+    }
+
+    private static List<LayerWeights> prepareLayerWeights(Session session, String[] layerNames) {
+        var resultTensors = getTensorsForLayers(session, layerNames);
+        final var i = new AtomicInteger();
+        return resultTensors.stream()
+                .map(tensor -> layerWeightsForTensor (layerNames[i.getAndIncrement()], tensor))
+                .collect(Collectors.toList());
+
+    }
+
+    private static List<Tensor<?>> getTensorsForLayers(Session session, String[] layerNames) {
+        var runner = session.runner();
+        for (var layerName : layerNames) {
+            runner = runner.fetch(layerName);
+        }
+        return runner.run();
+    }
+
+    private static LayerWeights layerWeightsForTensor(String name, Tensor<?> tensor) {
+        long[] size = tensor.shape();
+        if (size.length == 1) {
+            long dim = size[0];
+            return new LayerWeights(name, () -> new float[(int)dim]);
+        } else if (size.length == 2) {
+            long dimX = size[0], dimY = size[1];
+            return new LayerWeights(name, () -> new float[(int)dimX][(int)dimY]);
+        } else {
+            throw new RuntimeException("Unsupported tensor shape");
+        }
+    }
+
     public static void main (String[] args) throws IOException {
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
         final var trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")));
@@ -116,26 +157,20 @@ public class Test {
             graph.importGraphDef(graphDef);
             sess.runner().addTarget("init").run();
 
+            String[] layerNames = {"hidden1/weights", "hidden1/biases", "hidden2/weights", "hidden2/biases"};
+            var layersWithWeights = prepareLayerWeights (sess, layerNames);
             var start = System.nanoTime();
             testImagesBatches.forEach( batch -> {
                 sess.runner().feed("X", batch.getPixels())
                         .feed("y", batch.getLabel())
                         .addTarget("train/optimize")
                         .run();
-                var hidden1Weights = sess.runner().fetch("hidden1/weights").run();
-                LayerWeights hidden1WeightsArray = new LayerWeights(28*28, 300);
-                hidden1Weights.forEach( tensor -> {
-                    tensor.copyTo(hidden1WeightsArray.getWeights());
-                });
-                var hidden1Biases = sess.runner().fetch("hidden1/biases").run();
-                LayerWeights hidden1BiasesArray = new LayerWeights(1, 300);
-                hidden1Biases.forEach( tensor -> {
-                    tensor.copyTo(hidden1BiasesArray.getWeights()[0]);
-                });
-                System.out.println("END");
+                updateLayersWeights(sess, layersWithWeights);
             });
             var stop = System.nanoTime();
             System.out.println("Time = "  + (stop - start)*1e-9);
         }
     }
+
+
 }
