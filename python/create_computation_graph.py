@@ -47,6 +47,7 @@ if __name__ == "__main__":
     with open ('graph.pb', 'wb') as f:
         f.write(tf.get_default_graph().as_graph_def().SerializeToString())
 
+
     #
     # saver = tf.train.Saver()
     #
