@@ -14,6 +14,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -171,7 +172,7 @@ public class MnistGradientDescent implements StartPoint {
                 performCommunication ();
             });
             var stop = System.nanoTime();
-            System.out.println("Time = "  + (stop - start)*1e-9);
+            System.out.println("Time = "  + (stop - start)*1e-9 + "Communication time = " + commTime);
         }
     }
 
@@ -185,22 +186,36 @@ public class MnistGradientDescent implements StartPoint {
     int threadCount;
     int myId;
 
+    float commTime = 0;
     private void performCommunication() {
+     //   long start = System.nanoTime();
         PCJ.barrier();
         allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
         divideByThreadCount();
+        //long stop = System.nanoTime();
+        //commTime += (stop - start) * 1e-9;
     }
 
+    private void allToAllSimple () {
+
+    }
     private void allToAllHypercube() {
         final int d = Integer.numberOfTrailingZeros(threadCount);
         for (int i = 0; i < d; i++) {
             int partner = myId ^ (1 << i);
+
             var rawWeights = layersWithWeights.stream()
                     .map(LayerWeights::getWeights)
                     .map(FloatBuffer::array)
-                    .collect(Collectors.toList());
+                    .collect(Collectors.toList());//toCollection(ArrayList::new));//.toList());
+
+
+            long start = System.nanoTime();
             PCJ.asyncPut(rawWeights, partner, Shared.layersWeightsCommunicated);
+            long stop = System.nanoTime();
             PCJ.waitFor(Shared.layersWeightsCommunicated);
+
+            commTime += (stop - start) * 1e-9;
             addCommunicatedToLayers();
             PCJ.barrier();
         }
