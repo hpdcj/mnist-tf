@@ -26,6 +26,7 @@ if __name__ == "__main__":
         hidden1 = fully_connected(X, n_hidden1, scope="hidden1")
         hidden2 = fully_connected(hidden1, n_hidden2, scope="hidden2")
         logits = fully_connected(hidden2, n_outputs, scope="outputs", activation_fn=None)
+        no_op = tf.no_op(name="no_op")
 
     with tf.name_scope("loss"):
         xentropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y,

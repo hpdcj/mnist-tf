@@ -7,7 +7,7 @@ plugins {
 group 'pl.icm.lgorski'
 version '1.0-SNAPSHOT'
 
-sourceCompatibility = 1.10
+sourceCompatibility = 1.8
 mainClassName = 'pl.icm.lgorski.MnistGradientDescent'
 repositories {
     mavenCentral()
