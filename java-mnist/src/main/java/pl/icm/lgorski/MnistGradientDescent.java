@@ -153,7 +153,6 @@ public class MnistGradientDescent implements StartPoint {
 
         List<MnistImage> trainImagesSlice = trainImages.subList(BATCH_SIZE * myId, BATCH_SIZE * (myId + 1));
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
-        Collections.shuffle(trainImagesBatches);
         final List<MnistImageBatch> testImagesBatches = batchMnist(testImages, 1);
 
         try (Graph graph = new Graph();
@@ -175,6 +174,9 @@ public class MnistGradientDescent implements StartPoint {
                     performCommunication();
                     saveJavaObjectWeightsToTensorFlow(sess, layersWithWeights);
                     batchCounter.set(0);
+                    if (myId == 0) {
+                        System.out.println("Communicated");
+                    }
                 }
             });
             long stop = System.nanoTime();
@@ -209,10 +211,12 @@ public class MnistGradientDescent implements StartPoint {
         PCJ.barrier();
         layersWeightsCommunicated = layersWithWeights.stream().map(LayerWeights::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
         PCJ.barrier();
-        allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+        //allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+        allToAllSimple();
         divideByThreadCount();
         long stop = System.nanoTime();
         commTime += (stop - start) * 1e-9;
+        PCJ.barrier();
     }
 
     private void allToAllSimple () {
@@ -243,6 +247,7 @@ public class MnistGradientDescent implements StartPoint {
             weights.clear();
             weights.put(layersWeightsCommunicated.get(i));
         }
+        PCJ.barrier();
     }
     private void allToAllHypercube() {
         final int d = Integer.numberOfTrailingZeros(threadCount);
@@ -252,7 +257,7 @@ public class MnistGradientDescent implements StartPoint {
             List<float[]> rawWeights = layersWithWeights.stream()
                     .map(LayerWeights::getWeights)
                     .map(FloatBuffer::array)
-                    .collect(Collectors.toList());//toCollection(ArrayList::new));//.toList());
+                    .collect(Collectors.toList());
 
 
             PCJ.asyncPut(rawWeights, partner, Shared.layersWeightsCommunicated);
