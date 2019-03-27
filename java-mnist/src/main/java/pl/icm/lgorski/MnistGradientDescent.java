@@ -46,7 +46,7 @@ public class MnistGradientDescent implements StartPoint {
 
     }
 
-    private static class LayerWeights {
+    private static class WeightsTensor {
         @Getter
         private final FloatBuffer weights;
 
@@ -56,7 +56,7 @@ public class MnistGradientDescent implements StartPoint {
        @Getter
        private final long[] shape;
 
-        public LayerWeights(String layerName, int size, long[] shape){
+        public WeightsTensor(String layerName, int size, long[] shape){
             weights = FloatBuffer.allocate(size);
             this.layerName = layerName;
             this.shape = shape;
@@ -107,39 +107,49 @@ public class MnistGradientDescent implements StartPoint {
         }
     }
 
-    public void saveTensorFlowWeightsToJavaObject(Session session, List<LayerWeights> weights) {
-        String[] layerNames = weights.stream()
-                .map(LayerWeights::getLayerName)
+    public void saveTensorFlowWeightsToJavaObject(Session session, String weightsName) {
+  /*      String[] layerNames = weights.stream()
+                .map(WeightsTensor::getLayerName)
                 .toArray(String[]::new);
-        List<Tensor<?>> resultTensors = getTensorsForLayers(session, layerNames);
+        List<Tensor<?>> resultTensors = getTensorsForWeights(session, layerNames);
         IntStream.range(0, weights.size()).forEach( i -> {
             FloatBuffer weightsBuffer = weights.get(i).getWeights();
             weightsBuffer.clear();
             resultTensors.get(i).writeTo(weightsBuffer);
-        });
+        });*/
     }
 
-    private List<LayerWeights> prepareLayerWeights(Session session, String[] layerNames) {
-        List<Tensor<?>> resultTensors = getTensorsForLayers(session, layerNames);
+    private List<WeightsTensor> prepareWeights(Session session, String weightNames, String weightLengthName, MnistImageBatch primingBatch) {
+        List<Tensor<?>> resultTensors = getTensorsForWeights(session, weightNames, weightLengthName, primingBatch);
         final AtomicInteger i = new AtomicInteger();
         return resultTensors.stream()
-                .map(tensor -> layerWeightsForTensor (layerNames[i.getAndIncrement()], tensor))
+                .map(tensor -> weightsForTensor(weightNames + ":" + i.getAndIncrement(), tensor))
                 .collect(Collectors.toList());
 
     }
 
-    private List<Tensor<?>> getTensorsForLayers(Session session, String[] layerNames) {
+    private List<Tensor<?>> getTensorsForWeights(Session session, String weightNames, String weightLengthName, MnistImageBatch primingBatch) {
+        List<Tensor<?>> lengthOfComputationGradients =
+                session.runner()
+                        .feed("X", primingBatch.getPixels())
+                        .feed("y", primingBatch.getLabel())
+                        .fetch(weightLengthName)
+                        .run();
+        int numberOfWeights = lengthOfComputationGradients.get(0).intValue();
+
         Session.Runner runner = session.runner();
-        for (String layerName : layerNames) {
-            runner = runner.fetch(layerName);
+        runner.feed("X", primingBatch.getPixels())
+                .feed("y", primingBatch.getLabel());
+        for (int i = 0; i < numberOfWeights; i++) {
+            runner.fetch(weightNames, i);
         }
         return runner.run();
     }
 
-    private LayerWeights layerWeightsForTensor(String name, Tensor<?> tensor) {
+    private WeightsTensor weightsForTensor(String name, Tensor<?> tensor) {
         long[] size = tensor.shape();
         OptionalLong totalSize = Arrays.stream(size).reduce(Math::multiplyExact);
-        return new LayerWeights(name, (int)totalSize.getAsLong(), size);
+        return new WeightsTensor(name, (int)totalSize.getAsLong(), size);
     }
 
     @Override
@@ -160,23 +170,36 @@ public class MnistGradientDescent implements StartPoint {
             graph.importGraphDef(graphDef);
             sess.runner().addTarget("init").run();
 
-            String[] layerNames = {"hidden1/weights", "hidden1/biases", "hidden2/weights", "hidden2/biases"};
-            layersWithWeights = prepareLayerWeights (sess, layerNames);
+            weights = prepareWeights(sess,
+                    "train/compute_gradients",
+                    "train/compute_gradients_output_length",
+                    trainImagesBatches.get(0));
+
             long start = System.nanoTime();
             AtomicInteger batchCounter = new AtomicInteger();
             testImagesBatches.forEach( batch -> {
-                sess.runner().feed("X", batch.getPixels())
-                        .feed("y", batch.getLabel())
-                        .addTarget("train/optimize")
-                        .run();
-                if (batchCounter.getAndIncrement() == COMMUNICATE_AFTER_N_BATCHES) {
-                    saveTensorFlowWeightsToJavaObject(sess, layersWithWeights);
+                Session.Runner runner = sess.runner().feed("X", batch.getPixels())
+                        .feed("y", batch.getLabel());
+
+                if (batchCounter.getAndIncrement() != COMMUNICATE_AFTER_N_BATCHES) {
+                    //    saveTensorFlowWeightsToJavaObject(weightsTensor);
                     performCommunication();
-                    saveJavaObjectWeightsToTensorFlow(sess, layersWithWeights);
+                    saveJavaObjectWeightsToTensorFlow(sess, weights);
                     batchCounter.set(0);
                     if (myId == 0) {
                         System.out.println("Communicated");
                     }
+                } else {
+                    //TODO: podzielić na ścieżki wykonania - z pobieraniem tensorów i bez tego
+                    List<Tensor<?>> weightsTensor = sess.runner().feed("X", batch.getPixels())
+                            .feed("y", batch.getLabel())
+                            .fetch("train/compute_gradients:0")
+                            .fetch("train/compute_gradients:1")
+                            .fetch("train/compute_gradients:2")
+                            .fetch("train/compute_gradients:3")
+                            .fetch("train/compute_gradients:4")
+                            .fetch("train/compute_gradients:5")
+                            .run();
                 }
             });
             long stop = System.nanoTime();
@@ -184,13 +207,13 @@ public class MnistGradientDescent implements StartPoint {
         }
     }
 
-    private void saveJavaObjectWeightsToTensorFlow(Session sess, List<LayerWeights> layersWithWeights) {
+    private void saveJavaObjectWeightsToTensorFlow(Session sess, List<WeightsTensor> layersWithWeights) {
         Session.Runner runner = sess.runner();
         for (int i = 0; i < layersWithWeights.size(); i++) {
-            LayerWeights layerWeights = layersWithWeights.get(i);
-            layerWeights.getWeights().flip();
-            Tensor<Float> tensor = Tensor.create(layerWeights.getShape(), layerWeights.getWeights());
-            runner = runner.feed(layerWeights.getLayerName(), tensor);
+            WeightsTensor weightsTensor = layersWithWeights.get(i);
+            weightsTensor.getWeights().flip();
+            Tensor<Float> tensor = Tensor.create(weightsTensor.getShape(), weightsTensor.getWeights());
+            runner = runner.feed(weightsTensor.getLayerName(), tensor);
         }
         runner.addTarget("dnn/no_op").run();
     }
@@ -199,7 +222,7 @@ public class MnistGradientDescent implements StartPoint {
     enum Shared {
         layersWeightsCommunicated
     }
-    private List<LayerWeights> layersWithWeights;
+    private List<WeightsTensor> weights;
 
     private List<float[]> layersWeightsCommunicated;
     int threadCount;
@@ -209,7 +232,7 @@ public class MnistGradientDescent implements StartPoint {
     private void performCommunication() {
         long start = System.nanoTime();
         PCJ.barrier();
-        layersWeightsCommunicated = layersWithWeights.stream().map(LayerWeights::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
+        layersWeightsCommunicated = weights.stream().map(WeightsTensor::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
         PCJ.barrier();
         //allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
         allToAllSimple();
@@ -238,12 +261,12 @@ public class MnistGradientDescent implements StartPoint {
                     }
                 }
             }
-            PCJ.broadcast(layersWithWeights, Shared.layersWeightsCommunicated);
+            PCJ.broadcast(weights, Shared.layersWeightsCommunicated);
         } else {
             PCJ.waitFor(Shared.layersWeightsCommunicated);
         }
-        for (int i = 0; i < layersWithWeights.size(); i++) {
-            FloatBuffer weights = layersWithWeights.get(i).getWeights();
+        for (int i = 0; i < weights.size(); i++) {
+            FloatBuffer weights = this.weights.get(i).getWeights();
             weights.clear();
             weights.put(layersWeightsCommunicated.get(i));
         }
@@ -254,8 +277,8 @@ public class MnistGradientDescent implements StartPoint {
         for (int i = 0; i < d; i++) {
             int partner = myId ^ (1 << i);
 
-            List<float[]> rawWeights = layersWithWeights.stream()
-                    .map(LayerWeights::getWeights)
+            List<float[]> rawWeights = weights.stream()
+                    .map(WeightsTensor::getWeights)
                     .map(FloatBuffer::array)
                     .collect(Collectors.toList());
 
@@ -269,8 +292,8 @@ public class MnistGradientDescent implements StartPoint {
     }
 
     private void addCommunicatedWeightsToLayers(List<float[]> communicated) {
-        for (int layer = 0; layer < layersWithWeights.size(); layer++) {
-            float[] weightsArray = layersWithWeights.get(layer).getWeights().array();
+        for (int layer = 0; layer < weights.size(); layer++) {
+            float[] weightsArray = weights.get(layer).getWeights().array();
             float[] communicatedWeightsArray = communicated.get(layer);
             for (int i = 0; i < weightsArray.length; i++) {
                 weightsArray[i] += communicatedWeightsArray[i];
@@ -280,7 +303,7 @@ public class MnistGradientDescent implements StartPoint {
 
 
     private void divideByThreadCount() {
-        for (LayerWeights layer : layersWithWeights) {
+        for (WeightsTensor layer : weights) {
             float[] weightsArray = layer.getWeights().array();
             for (int i = 0; i < weightsArray.length; i++) {
                 weightsArray[i] /= threadCount;
