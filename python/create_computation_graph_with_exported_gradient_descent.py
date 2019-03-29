@@ -30,6 +30,15 @@ if __name__ == "__main__":
         logits = fully_connected(hidden2, n_outputs, scope="outputs", activation_fn=None)
         no_op = tf.no_op(name="no_op")
 
+    with tf.name_scope("modify_weights"):
+        for layer in ["hidden1/weights", "hidden1/biases",
+                      "hidden2/weights", "hidden2/biases",
+                      "outputs/weights", "outputs/biases"]:
+            with tf.variable_scope("", reuse=True):
+                var = tf.get_variable(layer)
+                placeholder = tf.placeholder(tf.float32, shape=var.get_shape(), name="p"+layer)
+                tf.assign(var, placeholder, name="assign")
+
     with tf.name_scope("loss"):
         xentropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y,
                                                                   logits=logits)
@@ -37,12 +46,17 @@ if __name__ == "__main__":
 
     learning_rate = 0.01
 
+    with tf.name_scope("train_simple"):
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+        training_op = optimizer.minimize(loss, name='optimize')
+
     with tf.name_scope("train"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
         gradients = optimizer.compute_gradients(loss)
         gradients_named = tf.identity_n(gradients, name='compute_gradients')
         gradients_named_length = tf.Variable(len(gradients_named), name='compute_gradients_output_length', trainable=False)
         training_op = optimizer.apply_gradients(gradients, name='apply_gradients')
+
 
     with tf.name_scope("eval"):
         correct = tf.nn.in_top_k(logits, y, 1)

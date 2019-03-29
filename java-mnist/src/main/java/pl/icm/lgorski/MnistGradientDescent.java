@@ -15,6 +15,7 @@ import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -27,6 +28,7 @@ public class MnistGradientDescent implements StartPoint {
     private static final int BATCH_SIZE = 100;
     private static final int IMAGE_SIZE = 28*28;
     private static final int COMMUNICATE_AFTER_N_BATCHES = 20;
+    private static final int EPOCHS = 100;
 
 
     @RequiredArgsConstructor
@@ -107,41 +109,30 @@ public class MnistGradientDescent implements StartPoint {
         }
     }
 
-    public void saveTensorFlowWeightsToJavaObject(Session session, String weightsName) {
-  /*      String[] layerNames = weights.stream()
-                .map(WeightsTensor::getLayerName)
-                .toArray(String[]::new);
-        List<Tensor<?>> resultTensors = getTensorsForWeights(session, layerNames);
-        IntStream.range(0, weights.size()).forEach( i -> {
-            FloatBuffer weightsBuffer = weights.get(i).getWeights();
+    public void saveTensorFlowWeightsToJavaObject(List<Tensor<?>> tensorsWeights, List<WeightsTensor> javaWeights) {
+        IntStream.range(0, javaWeights.size()).forEach( i -> {
+            FloatBuffer weightsBuffer = javaWeights.get(i).getWeights();
             weightsBuffer.clear();
-            resultTensors.get(i).writeTo(weightsBuffer);
-        });*/
+            tensorsWeights.get(i).writeTo(weightsBuffer);
+            weightsBuffer.flip();
+        });
     }
 
-    private List<WeightsTensor> prepareWeights(Session session, String weightNames, String weightLengthName, MnistImageBatch primingBatch) {
-        List<Tensor<?>> resultTensors = getTensorsForWeights(session, weightNames, weightLengthName, primingBatch);
+    private List<WeightsTensor> prepareWeights(Session session, String[] weightNames, MnistImageBatch primingBatch) {
+        List<Tensor<?>> resultTensors = getTensorsForWeights(session, weightNames, primingBatch);
         final AtomicInteger i = new AtomicInteger();
         return resultTensors.stream()
-                .map(tensor -> weightsForTensor(weightNames + ":" + i.getAndIncrement(), tensor))
+                .map(tensor -> weightsForTensor(weightNames[i.getAndIncrement()], tensor))
                 .collect(Collectors.toList());
 
     }
 
-    private List<Tensor<?>> getTensorsForWeights(Session session, String weightNames, String weightLengthName, MnistImageBatch primingBatch) {
-        List<Tensor<?>> lengthOfComputationGradients =
-                session.runner()
-                        .feed("X", primingBatch.getPixels())
-                        .feed("y", primingBatch.getLabel())
-                        .fetch(weightLengthName)
-                        .run();
-        int numberOfWeights = lengthOfComputationGradients.get(0).intValue();
-
+    private List<Tensor<?>> getTensorsForWeights(Session session, String[] weightNames, MnistImageBatch primingBatch) {
         Session.Runner runner = session.runner();
         runner.feed("X", primingBatch.getPixels())
                 .feed("y", primingBatch.getLabel());
-        for (int i = 0; i < numberOfWeights; i++) {
-            runner.fetch(weightNames, i);
+        for (int i = 0; i < weightNames.length; i++) {
+            runner.fetch(weightNames[i]);
         }
         return runner.run();
     }
@@ -169,36 +160,85 @@ public class MnistGradientDescent implements StartPoint {
              Session sess = new Session((graph))) {
             graph.importGraphDef(graphDef);
             sess.runner().addTarget("init").run();
+            String[] layerNames = {
+                    "hidden1/weights",
+                    "hidden1/biases",
+                    "hidden2/weights",
+                    "hidden2/biases",
+                    "outputs/weights",
+                    "outputs/biases"
+            };
+            Session.Runner initRunner = sess.runner();
+            for (String layerName : layerNames) {
+                initRunner.fetch(layerName);
+            }
+            List<Tensor<?>> initialWeights = initRunner.run();
+            if (PCJ.myId() == 0) {
+                AtomicInteger i = new AtomicInteger();
+                layersWeightsCommunicated = initialWeights.stream().map(tensor -> {
+                    int size = (int)Arrays.stream(tensor.shape()).reduce(Math::multiplyExact).getAsLong();
+                    WeightsTensor weightsTensor = new WeightsTensor(layerNames[i.getAndIncrement()], size, tensor.shape());
+                    tensor.writeTo(weightsTensor.getWeights());
+                    return weightsTensor;
+                })
+                        .map(WeightsTensor::getWeights)
+                        .map(FloatBuffer::array).collect(Collectors.toList());
+                PCJ.broadcast(layersWeightsCommunicated, Shared.layersWeightsCommunicated);
+            } else {
+                final long[][] shapes = initialWeights.stream()
+                        .map(Tensor::shape)
+                        .collect(Collectors.toList())
+                        .toArray(new long[][]{});
+                PCJ.waitFor(Shared.layersWeightsCommunicated);
+                Session.Runner runner = sess.runner();
+                for (int i = 0; i < layerNames.length; i++) {
+                    runner = runner.feed("modify_weights/p" + layerNames[i], Tensor.create(shapes[i], FloatBuffer.wrap(layersWeightsCommunicated.get(i))));
+                }
+                runner.addTarget("modify_weights/assign").run();
+            }
+            PCJ.barrier();
 
+            String[] gradientWeightNames = {
+                    "train/gradients/dnn/hidden1/MatMul_grad/tuple/control_dependency_1:0",
+                    "train/gradients/dnn/hidden1/BiasAdd_grad/tuple/control_dependency_1:0",
+                    "train/gradients/dnn/hidden2/MatMul_grad/tuple/control_dependency_1:0",
+                    "train/gradients/dnn/hidden2/BiasAdd_grad/tuple/control_dependency_1:0",
+                    "train/gradients/dnn/outputs/MatMul_grad/tuple/control_dependency_1:0",
+                    "train/gradients/dnn/outputs/BiasAdd_grad/tuple/control_dependency_1:0",
+            };
             weights = prepareWeights(sess,
-                    "train/compute_gradients",
-                    "train/compute_gradients_output_length",
+                    gradientWeightNames,
                     trainImagesBatches.get(0));
 
             long start = System.nanoTime();
             AtomicInteger batchCounter = new AtomicInteger();
-            testImagesBatches.forEach( batch -> {
-                Session.Runner runner = sess.runner().feed("X", batch.getPixels())
-                        .feed("y", batch.getLabel());
-
-                if (batchCounter.getAndIncrement() != COMMUNICATE_AFTER_N_BATCHES) {
-                    //    saveTensorFlowWeightsToJavaObject(weightsTensor);
+            testImagesBatches.stream().limit(EPOCHS).forEach( batch -> {
+                if (batchCounter.getAndIncrement() == COMMUNICATE_AFTER_N_BATCHES) {
+                    Session.Runner runner = sess.runner().feed("X", batch.getPixels())
+                            .feed("y", batch.getLabel())
+                            .addTarget("train/compute_gradients");
+                    for (String layer : weights.stream().map(WeightsTensor::getLayerName).collect(Collectors.toList())) {
+                        runner = runner.fetch(layer);
+                    }
+                    List<Tensor<?>> weightsTensor = runner.run();
+                    saveTensorFlowWeightsToJavaObject(weightsTensor, weights);
                     performCommunication();
-                    saveJavaObjectWeightsToTensorFlow(sess, weights);
                     batchCounter.set(0);
                     if (myId == 0) {
                         System.out.println("Communicated");
                     }
+                    runner = sess.runner();
+                    for (WeightsTensor weight : weights) {
+                        runner = runner.feed(weight.layerName,
+                                Tensor.create(weight.getShape(), weight.getWeights()));
+                    }
+                    runner.addTarget("train/apply_gradients").run();
                 } else {
-                    //TODO: podzielić na ścieżki wykonania - z pobieraniem tensorów i bez tego
-                    List<Tensor<?>> weightsTensor = sess.runner().feed("X", batch.getPixels())
-                            .feed("y", batch.getLabel())
-                            .fetch("train/compute_gradients:0")
-                            .fetch("train/compute_gradients:1")
-                            .fetch("train/compute_gradients:2")
-                            .fetch("train/compute_gradients:3")
-                            .fetch("train/compute_gradients:4")
-                            .fetch("train/compute_gradients:5")
+                    Session.Runner runner = sess.runner();
+                    runner = runner.feed("X", batch.getPixels())
+                            .feed("y", batch.getLabel());
+                    List<Tensor<?>> weightsTensor = runner
+                            .addTarget("train_simple/optimize")
                             .run();
                 }
             });
@@ -232,10 +272,10 @@ public class MnistGradientDescent implements StartPoint {
     private void performCommunication() {
         long start = System.nanoTime();
         PCJ.barrier();
-        layersWeightsCommunicated = weights.stream().map(WeightsTensor::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
-        PCJ.barrier();
-        //allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
-        allToAllSimple();
+        //layersWeightsCommunicated = weights.stream().map(WeightsTensor::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
+        //PCJ.barrier();
+        allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+        //allToAllSimple();
         divideByThreadCount();
         long stop = System.nanoTime();
         commTime += (stop - start) * 1e-9;
