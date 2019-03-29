@@ -152,8 +152,12 @@ public class MnistGradientDescent implements StartPoint {
         final List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")));
         final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")));
 
-        List<MnistImage> trainImagesSlice = trainImages.subList(BATCH_SIZE * myId, BATCH_SIZE * (myId + 1));
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
+        final List<MnistImageBatch> tmp = trainImagesBatches;
+        trainImagesBatches = IntStream.range(0, trainImagesBatches.size())
+                .filter(i -> i % PCJ.threadCount() == PCJ.myId())
+                .mapToObj(tmp::get)
+                .collect(Collectors.toList());
         final List<MnistImageBatch> testImagesBatches = batchMnist(testImages, 1);
 
         try (Graph graph = new Graph();
