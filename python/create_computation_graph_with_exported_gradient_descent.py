@@ -44,7 +44,7 @@ if __name__ == "__main__":
                                                                   logits=logits)
         loss = tf.reduce_mean(xentropy, name="loss")
 
-    learning_rate = 0.01
+    learning_rate = tf.placeholder_with_default(0.01, shape=[], name="learning_rate")
 
     with tf.name_scope("train_simple"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     with tf.name_scope("eval"):
         correct = tf.nn.in_top_k(logits, y, 1)
-        accuracy = tf.reduce_mean(tf.cast(correct, tf.float32))
+        accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
 
     init = tf.global_variables_initializer()
 

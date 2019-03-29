@@ -4,9 +4,9 @@ if __name__ == "__main__":
     import tensorflow as tf
     import numpy as np
 
-    import horovod.tensorflow as hvd
+  #  import horovod.tensorflow as hvd
 
-    hvd.init() #horovod
+ #   hvd.init() #horovod
 
     (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
     X_train = X_train.astype(np.float32).reshape(-1, 28*28) / 255.0
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     with tf.name_scope("train"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-        optimizer = hvd.DistributedOptimizer(optimizer)
+        #optimizer = hvd.DistributedOptimizer(optimizer)
         training_op = optimizer.minimize(loss, name='optimize')
 
     with tf.name_scope("eval"):
@@ -64,9 +64,13 @@ if __name__ == "__main__":
 
     with tf.Session() as sess:
         init.run()
+        import time
+        start = time.time()
         for epoch in range(n_epochs):
             for X_batch, y_batch in shuffle_batch(X_train, y_train, batch_size):
                 sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
             acc_batch = accuracy.eval(feed_dict={X: X_batch, y: y_batch})
             acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
             print(epoch, "Batch accuracy:", acc_batch, "Val accuracy:", acc_val)
+        stop = time.time()
+        print ("Time: ", stop - start)
