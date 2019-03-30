@@ -224,15 +224,12 @@ public class MnistGradientDescent implements StartPoint {
             }
             PCJ.barrier();
 
-            float accuracyz = evaluate(sess, testImagesBatches.get(0));
-            System.out.println("!" + accuracyz);
-
             long start = System.nanoTime();
             for (int epoch = 0; epoch < EPOCHS; epoch++) {
-                System.out.println("epoch");
                 Collections.shuffle(trainImages);
                 List<MnistImageBatch> batches = batchMnist(trainImages, BATCH_SIZE);
                 final int finalEpoch = epoch;
+                AtomicInteger ai = new AtomicInteger();
                 batches.forEach( batch -> {
                     if (finalEpoch % COMMUNICATE_AFTER_N_EPOCHS == 0) {
                         Session.Runner runner = sess.runner().feed("X", batch.getPixels())
@@ -262,7 +259,7 @@ public class MnistGradientDescent implements StartPoint {
                     }
                 });
                 float accuracy = evaluate(sess, testImagesBatches.get(0));
-                System.out.println(PCJ.myId() + " " + accuracy);
+                System.out.println(myId + " " + accuracy);
             }
             long stop = System.nanoTime();
             System.out.println("Time = "  + (stop - start)*1e-9 + "Communication time = " + commTime);
@@ -304,8 +301,7 @@ public class MnistGradientDescent implements StartPoint {
         long start = System.nanoTime();
         PCJ.monitor(Shared.layersWeightsCommunicated);
         PCJ.barrier();
-        //PCJ.barrier();
-       // allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+       //allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
         allToAllSimple();
         divideByThreadCount();
         long stop = System.nanoTime();
@@ -315,6 +311,7 @@ public class MnistGradientDescent implements StartPoint {
 
     private void allToAllSimple () {
         layersWeightsCommunicated = weights.stream().map(WeightsTensor::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
+        PCJ.barrier();
         if (myId == 0) {
             PcjFuture<List<float[]>>[] futures = new PcjFuture[threadCount];
             for (int i = 0; i < futures.length; i++) {
