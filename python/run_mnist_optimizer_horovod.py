@@ -1,10 +1,14 @@
+#! /usr/bin/python3
+
 #based on Hands on Sci-kit and Tensorflow...
 
 if __name__ == "__main__":
     import tensorflow as tf
     import numpy as np
-    import os
-    import random as rn
+
+    import horovod.tensorflow as hvd
+
+    hvd.init() #horovod
 
     (X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
     X_train = X_train.astype(np.float32).reshape(-1, 28*28) / 255.0
@@ -30,47 +34,28 @@ if __name__ == "__main__":
         logits = fully_connected(hidden2, n_outputs, scope="outputs", activation_fn=None)
         no_op = tf.no_op(name="no_op")
 
-    with tf.name_scope("modify_weights"):
-        for layer in ["hidden1/weights", "hidden1/biases",
-                      "hidden2/weights", "hidden2/biases",
-                      "outputs/weights", "outputs/biases"]:
-            with tf.variable_scope("", reuse=True):
-                var = tf.get_variable(layer)
-                placeholder = tf.placeholder(tf.float32, shape=var.get_shape(), name="p"+layer)
-                tf.assign(var, placeholder, name="assign-"+layer)
-
     with tf.name_scope("loss"):
         xentropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y,
                                                                   logits=logits)
         loss = tf.reduce_mean(xentropy, name="loss")
 
-    learning_rate = tf.placeholder_with_default(0.01, shape=[], name="learning_rate")
-
-    with tf.name_scope("train_simple"):
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-        training_op = optimizer.minimize(loss, name='optimize')
+    learning_rate = 0.01
 
     with tf.name_scope("train"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-        gradients = optimizer.compute_gradients(loss)
-        gradients_named = tf.identity_n(gradients, name='compute_gradients')
-        gradients_named_length = tf.Variable(len(gradients_named), name='compute_gradients_output_length', trainable=False)
-        training_op = optimizer.apply_gradients(gradients, name='apply_gradients')
-
+        optimizer = hvd.DistributedOptimizer(optimizer)
+        training_op = optimizer.minimize(loss, name='optimize')
 
     with tf.name_scope("eval"):
         correct = tf.nn.in_top_k(logits, y, 1)
-        accuracy = tf.reduce_mean(tf.cast(correct, tf.float32), name="accuracy")
+        accuracy = tf.reduce_mean(tf.cast(correct, tf.float32))
 
     init = tf.global_variables_initializer()
+    bcast = hvd.broadcast_global_variables(0)
 
-    with open ('graph.pb', 'wb') as f:
-        f.write(tf.get_default_graph().as_graph_def().SerializeToString())
 
-    saver = tf.train.Saver()
-
-    n_epochs = 40
-    batch_size = 50
+    n_epochs = 10
+    batch_size = 200
 
     def shuffle_batch(X, y, batch_size):
         rnd_idx = np.random.permutation(len(X))
@@ -81,11 +66,15 @@ if __name__ == "__main__":
 
     with tf.Session() as sess:
         init.run()
+        bcast.run()
+        import time
+        start = time.time()
         for epoch in range(n_epochs):
+            bcast.run()
             for X_batch, y_batch in shuffle_batch(X_train, y_train, batch_size):
                 sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
             acc_batch = accuracy.eval(feed_dict={X: X_batch, y: y_batch})
             acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
-            print(epoch, "Batch accuracy:", acc_batch, "Val accuracy:", acc_val)
-
-        save_path = saver.save(sess, "./my_model_final.ckpt")
+            print("Rank: ", hvd.rank(), " epoch: ", epoch, "Batch accuracy:", acc_batch, "Val accuracy:", acc_val)
+        stop = time.time()
+        print ("Time: ", stop - start)
