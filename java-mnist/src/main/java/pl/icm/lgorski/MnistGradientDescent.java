@@ -81,6 +81,7 @@ public class MnistGradientDescent implements StartPoint {
                 .stream()
                 .map(this::processBatch)
                 .collect(Collectors.toList());
+
     }
 
     private MnistImageBatch processBatch(List<MnistImage> currentBatch) {
@@ -150,7 +151,7 @@ public class MnistGradientDescent implements StartPoint {
 
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
         List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
-                .stream().limit(55_000).collect(Collectors.toList());
+                .stream().skip(5_000).collect(Collectors.toList());
        // gaussianNoise(trainImages);
         final List<MnistImage> tmp = trainImages;
         trainImages = IntStream.range(0, trainImages.size())
@@ -159,7 +160,7 @@ public class MnistGradientDescent implements StartPoint {
                 .collect(Collectors.toList());
 
         final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
-                .stream().skip(55_000).collect(Collectors.toList());
+                .stream().limit(5_000).collect(Collectors.toList());
 
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
  /*       final List<MnistImageBatch> tmp = trainImagesBatches;
@@ -197,7 +198,7 @@ public class MnistGradientDescent implements StartPoint {
                         gradientWeightNames,
                         trainImagesBatches.get(0));
 
-
+                sess.runner().addTarget("init").run();
                 String[] layerNames = {
                         "hidden1/weights",
                         "hidden1/biases",
@@ -237,6 +238,8 @@ public class MnistGradientDescent implements StartPoint {
                 }
                 PCJ.barrier();
 
+                System.out.println("Number of images = " + trainImages.size() + " batches " + trainImagesBatches.size());
+
                 long start = System.nanoTime();
                 for (int epoch = 0; epoch < EPOCHS; epoch++) {
                     Collections.shuffle(trainImages);
@@ -259,7 +262,8 @@ public class MnistGradientDescent implements StartPoint {
                                 runner = runner.feed(weight.layerName,
                                         Tensor.create(weight.getShape(), weight.getWeights()));
                             }
-                            runner.addTarget("train/apply_gradients").run();
+                            runner.addTarget("train/apply_gradients")
+                                    .feed("learning_rate", learningRateTensor).run();
                         } else {
                             Session.Runner runner = sess.runner();
                             runner = runner.feed("X", batch.getPixels())
@@ -271,12 +275,13 @@ public class MnistGradientDescent implements StartPoint {
                         }
                     });
                     float accuracy = evaluate(sess, testImagesBatches.get(0));
-                    System.out.println(myId + " " + accuracy);
+                    System.out.println(accuracy);
                 }
                 long stop = System.nanoTime();
-                System.out.println("Time = " + (stop - start) * 1e-9 + "Communication time = " + commTime);
                 float accuracy = evaluate(sess, testImagesBatches.get(0));
-                System.out.println(accuracy);
+                if (myId == 0) {
+                    System.out.println("Time" + ii + " = " + (stop - start) * 1e-9 + "Communication time = " + commTime + " accuracy = " + accuracy);
+                }
             }
         }
     }
