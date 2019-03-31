@@ -25,7 +25,7 @@ import java.util.stream.IntStream;
 @RegisterStorage(MnistGradientDescent.Shared.class)
 public class MnistGradientDescent implements StartPoint {
 
-    private static final int BATCH_SIZE = 1000;
+    private static final int BATCH_SIZE = 500;
     private static final int IMAGE_SIZE = 28*28;
     private static final int COMMUNICATE_AFTER_N_EPOCHS = 1;
     private static final int EPOCHS = 20;
@@ -151,15 +151,15 @@ public class MnistGradientDescent implements StartPoint {
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
         List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
                 .stream().limit(55_000).collect(Collectors.toList());
-        gaussianNoise(trainImages);
-     /*   final List<MnistImage> tmp = trainImages;
+       // gaussianNoise(trainImages);
+        final List<MnistImage> tmp = trainImages;
         trainImages = IntStream.range(0, trainImages.size())
                 .filter(i -> i % PCJ.threadCount() == PCJ.myId())
                 .mapToObj(tmp::get)
-                .collect(Collectors.toList());*/
+                .collect(Collectors.toList());
 
-        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")))
-                .stream().limit(5_000).collect(Collectors.toList());
+        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
+                .stream().skip(55_000).collect(Collectors.toList());
 
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
  /*       final List<MnistImageBatch> tmp = trainImagesBatches;
