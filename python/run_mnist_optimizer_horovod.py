@@ -16,6 +16,8 @@ if __name__ == "__main__":
     y_train = y_train.astype(np.int32)
     y_test = y_test.astype(np.int32)
     X_valid, X_train = X_train[:5000], X_train[5000:]
+    X_train=X_train[hvd.rank()::hvd.size()]
+    y_test=y_test[hvd.rank()::hvd.size()]
     y_valid, y_train = y_train[:5000], y_train[5000:]
 
     n_inputs = 28*28  # MNIST
@@ -54,8 +56,8 @@ if __name__ == "__main__":
     bcast = hvd.broadcast_global_variables(0)
 
 
-    n_epochs = 10
-    batch_size = 200
+    n_epochs = 20
+    batch_size = 100
 
     def shuffle_batch(X, y, batch_size):
         rnd_idx = np.random.permutation(len(X))
@@ -70,7 +72,6 @@ if __name__ == "__main__":
         import time
         start = time.time()
         for epoch in range(n_epochs):
-            bcast.run()
             for X_batch, y_batch in shuffle_batch(X_train, y_train, batch_size):
                 sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
             acc_batch = accuracy.eval(feed_dict={X: X_batch, y: y_batch})

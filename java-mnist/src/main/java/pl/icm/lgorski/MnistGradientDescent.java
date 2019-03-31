@@ -10,6 +10,7 @@ import org.tensorflow.Session;
 import org.tensorflow.Tensor;
 
 import java.io.IOException;
+import java.nio.Buffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
@@ -24,10 +25,10 @@ import java.util.stream.IntStream;
 @RegisterStorage(MnistGradientDescent.Shared.class)
 public class MnistGradientDescent implements StartPoint {
 
-    private static final int BATCH_SIZE = 200;
+    private static final int BATCH_SIZE = 1000;
     private static final int IMAGE_SIZE = 28*28;
     private static final int COMMUNICATE_AFTER_N_EPOCHS = 1;
-    private static final int EPOCHS = 10;
+    private static final int EPOCHS = 20;
 
 
     @RequiredArgsConstructor
@@ -93,8 +94,8 @@ public class MnistGradientDescent implements StartPoint {
                     xs.put(image.getPixels());
                 });
 
-        ys.flip();
-        xs.flip();
+        ((Buffer)ys).flip();
+        ((Buffer)xs).flip();
 
         Tensor<Integer> tensorYs = Tensor.create(new long[] { numberOfElements }, ys);
         Tensor<Float> tensorXs = Tensor.create(new long[] { numberOfElements, IMAGE_SIZE}, xs);
@@ -111,9 +112,9 @@ public class MnistGradientDescent implements StartPoint {
     public void saveTensorFlowWeightsToJavaObject(List<Tensor<?>> tensorsWeights, List<WeightsTensor> javaWeights) {
         IntStream.range(0, javaWeights.size()).forEach( i -> {
             FloatBuffer weightsBuffer = javaWeights.get(i).getWeights();
-            weightsBuffer.clear();
+            ((Buffer)weightsBuffer).clear();
             tensorsWeights.get(i).writeTo(weightsBuffer);
-            weightsBuffer.flip();
+            ((Buffer)weightsBuffer).flip();
         });
     }
 
@@ -148,125 +149,150 @@ public class MnistGradientDescent implements StartPoint {
         threadCount = PCJ.threadCount();
 
         final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
-        final List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")));
-        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")));
+        List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
+                .stream().limit(55_000).collect(Collectors.toList());
+        gaussianNoise(trainImages);
+     /*   final List<MnistImage> tmp = trainImages;
+        trainImages = IntStream.range(0, trainImages.size())
+                .filter(i -> i % PCJ.threadCount() == PCJ.myId())
+                .mapToObj(tmp::get)
+                .collect(Collectors.toList());*/
+
+        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.test.txt")))
+                .stream().limit(5_000).collect(Collectors.toList());
 
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
-        final List<MnistImageBatch> tmp = trainImagesBatches;
+ /*       final List<MnistImageBatch> tmp = trainImagesBatches;
         trainImagesBatches = IntStream.range(0, trainImagesBatches.size())
                 .filter(i -> i % PCJ.threadCount() == PCJ.myId())
                 .mapToObj(tmp::get)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList());*/
+
         final List<MnistImageBatch> testImagesBatches = batchMnist(testImages, testImages.size());
 
 
-        final float learningRate = 0.01f * PCJ.threadCount();
+        final float learningRate = 0.01f*threadCount;
         final FloatBuffer learningRateBuffer = FloatBuffer.allocate(1);
-        learningRateBuffer.put(learningRate).flip();
+        ((Buffer)learningRateBuffer.put(learningRate)).flip();
         final Tensor<Float> learningRateTensor = Tensor.create(new long[]{}, learningRateBuffer);
 
 
         try (Graph graph = new Graph();
              Session sess = new Session((graph))) {
             graph.importGraphDef(graphDef);
-            sess.runner().addTarget("init").run();
+            for (int ii = 0; ii < 2; ii++) {
+                commTime = 0;
+                sess.runner().addTarget("init").run();
 
 
-            String[] gradientWeightNames = {
-                    "train/gradients/dnn/hidden1/MatMul_grad/tuple/control_dependency_1:0",
-                    "train/gradients/dnn/hidden1/BiasAdd_grad/tuple/control_dependency_1:0",
-                    "train/gradients/dnn/hidden2/MatMul_grad/tuple/control_dependency_1:0",
-                    "train/gradients/dnn/hidden2/BiasAdd_grad/tuple/control_dependency_1:0",
-                    "train/gradients/dnn/outputs/MatMul_grad/tuple/control_dependency_1:0",
-                    "train/gradients/dnn/outputs/BiasAdd_grad/tuple/control_dependency_1:0",
-            };
-            weights = prepareWeights(sess,
-                    gradientWeightNames,
-                    trainImagesBatches.get(0));
+                String[] gradientWeightNames = {
+                        "train/gradients/dnn/hidden1/MatMul_grad/tuple/control_dependency_1:0",
+                        "train/gradients/dnn/hidden1/BiasAdd_grad/tuple/control_dependency_1:0",
+                        "train/gradients/dnn/hidden2/MatMul_grad/tuple/control_dependency_1:0",
+                        "train/gradients/dnn/hidden2/BiasAdd_grad/tuple/control_dependency_1:0",
+                        "train/gradients/dnn/outputs/MatMul_grad/tuple/control_dependency_1:0",
+                        "train/gradients/dnn/outputs/BiasAdd_grad/tuple/control_dependency_1:0",
+                };
+                weights = prepareWeights(sess,
+                        gradientWeightNames,
+                        trainImagesBatches.get(0));
 
 
-            String[] layerNames = {
-                    "hidden1/weights",
-                    "hidden1/biases",
-                    "hidden2/weights",
-                    "hidden2/biases",
-                    "outputs/weights",
-                    "outputs/biases"
-            };
-            Session.Runner initRunner = sess.runner();
-            for (String layerName : layerNames) {
-                initRunner.fetch(layerName);
-            }
-            List<Tensor<?>> initialWeights = initRunner.run();
-            if (PCJ.myId() == 0) {
-                AtomicInteger i = new AtomicInteger();
-                List<float[]> forCommunication = initialWeights.stream().map(tensor -> {
-                    int size = (int)Arrays.stream(tensor.shape()).reduce(Math::multiplyExact).getAsLong();
-                    WeightsTensor weightsTensor = new WeightsTensor(layerNames[i.getAndIncrement()], size, tensor.shape());
-                    tensor.writeTo(weightsTensor.getWeights());
-                    return weightsTensor;
-                })
-                        .map(WeightsTensor::getWeights)
-                        .map(FloatBuffer::array).collect(Collectors.toList());
-                PCJ.broadcast(forCommunication, Shared.layersWeightsCommunicated);
-            } else {
-                final long[][] shapes = initialWeights.stream()
-                        .map(Tensor::shape)
-                        .collect(Collectors.toList())
-                        .toArray(new long[][]{});
-                PCJ.waitFor(Shared.layersWeightsCommunicated);
-                Session.Runner runner = sess.runner();
-                for (int i = 0; i < layerNames.length; i++) {
-                    runner = runner.feed("modify_weights/p" + layerNames[i], Tensor.create(shapes[i], FloatBuffer.wrap(layersWeightsCommunicated.get(i))))
-                            .addTarget("modify_weights/assign-" + layerNames[i]);
+                String[] layerNames = {
+                        "hidden1/weights",
+                        "hidden1/biases",
+                        "hidden2/weights",
+                        "hidden2/biases",
+                        "outputs/weights",
+                        "outputs/biases"
+                };
+                Session.Runner initRunner = sess.runner();
+                for (String layerName : layerNames) {
+                    initRunner.fetch(layerName);
                 }
-                runner.run();
-            }
-            PCJ.barrier();
-
-            long start = System.nanoTime();
-            for (int epoch = 0; epoch < EPOCHS; epoch++) {
-                Collections.shuffle(trainImages);
-                List<MnistImageBatch> batches = batchMnist(trainImages, BATCH_SIZE);
-                final int finalEpoch = epoch;
-                AtomicInteger ai = new AtomicInteger();
-                batches.forEach( batch -> {
-                    if (finalEpoch % COMMUNICATE_AFTER_N_EPOCHS == 0) {
-                        Session.Runner runner = sess.runner().feed("X", batch.getPixels())
-                                .feed("y", batch.getLabel())
-                                .feed("learning_rate", learningRateTensor)
-                                .addTarget("train/compute_gradients");
-                        for (String layer : weights.stream().map(WeightsTensor::getLayerName).collect(Collectors.toList())) {
-                            runner = runner.fetch(layer);
-                        }
-                        List<Tensor<?>> weightsTensor = runner.run();
-                        saveTensorFlowWeightsToJavaObject(weightsTensor, weights);
-                        performCommunication();
-                        runner = sess.runner();
-                        for (WeightsTensor weight : weights) {
-                            runner = runner.feed(weight.layerName,
-                                    Tensor.create(weight.getShape(), weight.getWeights()));
-                        }
-                        runner.addTarget("train/apply_gradients").run();
-                    } else {
-                        Session.Runner runner = sess.runner();
-                        runner = runner.feed("X", batch.getPixels())
-                                .feed("y", batch.getLabel())
-                                .feed("learning_rate", learningRateTensor);
-                        List<Tensor<?>> weightsTensor = runner
-                                .addTarget("train_simple/optimize")
-                                .run();
+                List<Tensor<?>> initialWeights = initRunner.run();
+                if (PCJ.myId() == 0) {
+                    AtomicInteger i = new AtomicInteger();
+                    List<float[]> forCommunication = initialWeights.stream().map(tensor -> {
+                        int size = (int) Arrays.stream(tensor.shape()).reduce(Math::multiplyExact).getAsLong();
+                        WeightsTensor weightsTensor = new WeightsTensor(layerNames[i.getAndIncrement()], size, tensor.shape());
+                        tensor.writeTo(weightsTensor.getWeights());
+                        return weightsTensor;
+                    })
+                            .map(WeightsTensor::getWeights)
+                            .map(FloatBuffer::array).collect(Collectors.toList());
+                    PCJ.broadcast(forCommunication, Shared.layersWeightsCommunicated);
+                } else {
+                    final long[][] shapes = initialWeights.stream()
+                            .map(Tensor::shape)
+                            .collect(Collectors.toList())
+                            .toArray(new long[][]{});
+                    PCJ.waitFor(Shared.layersWeightsCommunicated);
+                    Session.Runner runner = sess.runner();
+                    for (int i = 0; i < layerNames.length; i++) {
+                        runner = runner.feed("modify_weights/p" + layerNames[i], Tensor.create(shapes[i], FloatBuffer.wrap(layersWeightsCommunicated.get(i))))
+                                .addTarget("modify_weights/assign-" + layerNames[i]);
                     }
-                });
+                    runner.run();
+                }
+                PCJ.barrier();
+
+                long start = System.nanoTime();
+                for (int epoch = 0; epoch < EPOCHS; epoch++) {
+                    Collections.shuffle(trainImages);
+                    List<MnistImageBatch> batches = batchMnist(trainImages, BATCH_SIZE);
+                    final int finalEpoch = epoch;
+                    batches.forEach(batch -> {
+                        if (finalEpoch % COMMUNICATE_AFTER_N_EPOCHS == 0) {
+                            Session.Runner runner = sess.runner().feed("X", batch.getPixels())
+                                    .feed("y", batch.getLabel())
+                                    .feed("learning_rate", learningRateTensor)
+                                    .addTarget("train/compute_gradients");
+                            for (String layer : weights.stream().map(WeightsTensor::getLayerName).collect(Collectors.toList())) {
+                                runner = runner.fetch(layer);
+                            }
+                            List<Tensor<?>> weightsTensor = runner.run();
+                            saveTensorFlowWeightsToJavaObject(weightsTensor, weights);
+                            performCommunication();
+                            runner = sess.runner();
+                            for (WeightsTensor weight : weights) {
+                                runner = runner.feed(weight.layerName,
+                                        Tensor.create(weight.getShape(), weight.getWeights()));
+                            }
+                            runner.addTarget("train/apply_gradients").run();
+                        } else {
+                            Session.Runner runner = sess.runner();
+                            runner = runner.feed("X", batch.getPixels())
+                                    .feed("y", batch.getLabel())
+                                    .feed("learning_rate", learningRateTensor);
+                            List<Tensor<?>> weightsTensor = runner
+                                    .addTarget("train_simple/optimize")
+                                    .run();
+                        }
+                    });
+                    float accuracy = evaluate(sess, testImagesBatches.get(0));
+                    System.out.println(myId + " " + accuracy);
+                }
+                long stop = System.nanoTime();
+                System.out.println("Time = " + (stop - start) * 1e-9 + "Communication time = " + commTime);
                 float accuracy = evaluate(sess, testImagesBatches.get(0));
-                System.out.println(myId + " " + accuracy);
+                System.out.println(accuracy);
             }
-            long stop = System.nanoTime();
-            System.out.println("Time = "  + (stop - start)*1e-9 + "Communication time = " + commTime);
-            float accuracy = evaluate(sess, testImagesBatches.get(0));
-            System.out.println(accuracy);
         }
     }
+
+    java.util.Random r = new java.util.Random();
+
+    private void gaussianNoise(List<MnistImage> trainImages) {
+        for (MnistImage image: trainImages) {
+            float[] pixels = image.getPixels();
+            for (int i = 0; i < pixels.length; i++) {
+                double noise = r.nextGaussian() * Math.sqrt(0.01) + 0;
+                pixels[i] += noise;
+            }
+        }
+    }
+
 
     private float evaluate(Session sess, MnistImageBatch evaluationBatch) {
         return sess.runner().feed("X", evaluationBatch.getPixels())
@@ -279,7 +305,7 @@ public class MnistGradientDescent implements StartPoint {
         Session.Runner runner = sess.runner();
         for (int i = 0; i < layersWithWeights.size(); i++) {
             WeightsTensor weightsTensor = layersWithWeights.get(i);
-            weightsTensor.getWeights().flip();
+            ((Buffer)weightsTensor.getWeights()).flip();
             Tensor<Float> tensor = Tensor.create(weightsTensor.getShape(), weightsTensor.getWeights());
             runner = runner.feed(weightsTensor.getLayerName(), tensor);
         }
@@ -301,8 +327,9 @@ public class MnistGradientDescent implements StartPoint {
         long start = System.nanoTime();
         PCJ.monitor(Shared.layersWeightsCommunicated);
         PCJ.barrier();
-       //allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
-        allToAllSimple();
+       allToAllHypercube (); //cf. e.g. http://parallelcomp.uw.hu/ch04lev1sec3.html
+      //  allToAllSimple();
+     //   allToAllEveryone();
         divideByThreadCount();
         long stop = System.nanoTime();
         commTime += (stop - start) * 1e-9;
@@ -336,12 +363,45 @@ public class MnistGradientDescent implements StartPoint {
         }
         for (int i = 0; i < weights.size(); i++) {
             FloatBuffer weights = this.weights.get(i).getWeights();
-            weights.clear();
+            ((Buffer)weights).clear();
             weights.put(layersWeightsCommunicated.get(i));
-            weights.flip();
+            ((Buffer)weights).flip();
         }
         PCJ.barrier();
     }
+
+
+    private void allToAllEveryone () {
+        layersWeightsCommunicated = weights.stream().map(WeightsTensor::getWeights).map(FloatBuffer::array).collect(Collectors.toList());
+        PCJ.barrier();
+
+            PcjFuture<List<float[]>>[] futures = new PcjFuture[threadCount];
+            for (int i = 0; i < futures.length; i++) {
+                if (i != myId) {
+                    futures[i] = PCJ.asyncGet(i, Shared.layersWeightsCommunicated);
+                }
+            }
+            int downloaded = 0;
+            while (downloaded != threadCount - 1) {
+                for (int i = 0; i < futures.length; i++) {
+                    if (futures[i] != null && futures[i].isDone()) {
+                        List<float[]> remoteWeights = futures[i].get();
+                        addCommunicatedWeightsToLayers(remoteWeights);
+                        futures[i] = null;
+                        downloaded++;
+                    }
+                }
+            }
+
+        for (int i = 0; i < weights.size(); i++) {
+            FloatBuffer weights = this.weights.get(i).getWeights();
+            ((Buffer)weights).clear();
+            weights.put(layersWeightsCommunicated.get(i));
+            ((Buffer)weights).flip();
+        }
+        PCJ.barrier();
+    }
+
     private void allToAllHypercube() {
         final int d = Integer.numberOfTrailingZeros(threadCount);
         for (int i = 0; i < d; i++) {
