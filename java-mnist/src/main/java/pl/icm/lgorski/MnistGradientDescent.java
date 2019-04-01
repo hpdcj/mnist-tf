@@ -25,7 +25,7 @@ import java.util.stream.IntStream;
 @RegisterStorage(MnistGradientDescent.Shared.class)
 public class MnistGradientDescent implements StartPoint {
 
-    private static final int BATCH_SIZE = 500;
+    private static final int BATCH_SIZE = 50;
     private static final int IMAGE_SIZE = 28*28;
     private static final int COMMUNICATE_AFTER_N_EPOCHS = 1;
     private static final int EPOCHS = 20;
@@ -144,6 +144,11 @@ public class MnistGradientDescent implements StartPoint {
         return new WeightsTensor(name, (int)totalSize.getAsLong(), size);
     }
 
+    private void cloaseListOfTensors (List<Tensor<?>> list) {
+        for (Tensor<?> tensor: list) {
+            tensor.close();
+        }
+    }
     @Override
     public void main() throws Throwable {
         myId = PCJ.myId();
@@ -183,7 +188,7 @@ public class MnistGradientDescent implements StartPoint {
             graph.importGraphDef(graphDef);
             for (int ii = 0; ii < 2; ii++) {
                 commTime = 0;
-                sess.runner().addTarget("init").run();
+                cloaseListOfTensors(sess.runner().addTarget("init").run());
 
 
                 String[] gradientWeightNames = {
@@ -198,7 +203,7 @@ public class MnistGradientDescent implements StartPoint {
                         gradientWeightNames,
                         trainImagesBatches.get(0));
 
-                sess.runner().addTarget("init").run();
+                cloaseListOfTensors(sess.runner().addTarget("init").run());
                 String[] layerNames = {
                         "hidden1/weights",
                         "hidden1/biases",
@@ -234,11 +239,10 @@ public class MnistGradientDescent implements StartPoint {
                         runner = runner.feed("modify_weights/p" + layerNames[i], Tensor.create(shapes[i], FloatBuffer.wrap(layersWeightsCommunicated.get(i))))
                                 .addTarget("modify_weights/assign-" + layerNames[i]);
                     }
-                    runner.run();
+                    cloaseListOfTensors(runner.run());
                 }
                 PCJ.barrier();
-
-                System.out.println("Number of images = " + trainImages.size() + " batches " + trainImagesBatches.size());
+                cloaseListOfTensors(initialWeights);
 
                 long start = System.nanoTime();
                 for (int epoch = 0; epoch < EPOCHS; epoch++) {
@@ -256,14 +260,15 @@ public class MnistGradientDescent implements StartPoint {
                             }
                             List<Tensor<?>> weightsTensor = runner.run();
                             saveTensorFlowWeightsToJavaObject(weightsTensor, weights);
+                            cloaseListOfTensors(weightsTensor);
                             performCommunication();
                             runner = sess.runner();
                             for (WeightsTensor weight : weights) {
                                 runner = runner.feed(weight.layerName,
                                         Tensor.create(weight.getShape(), weight.getWeights()));
                             }
-                            runner.addTarget("train/apply_gradients")
-                                    .feed("learning_rate", learningRateTensor).run();
+                            cloaseListOfTensors(runner.addTarget("train/apply_gradients")
+                                    .feed("learning_rate", learningRateTensor).run());
                         } else {
                             Session.Runner runner = sess.runner();
                             runner = runner.feed("X", batch.getPixels())
@@ -272,7 +277,9 @@ public class MnistGradientDescent implements StartPoint {
                             List<Tensor<?>> weightsTensor = runner
                                     .addTarget("train_simple/optimize")
                                     .run();
+                            cloaseListOfTensors(weightsTensor);
                         }
+                        batch.getPixels().close();
                     });
                     float accuracy = evaluate(sess, testImagesBatches.get(0));
                     System.out.println(accuracy);
@@ -300,21 +307,13 @@ public class MnistGradientDescent implements StartPoint {
 
 
     private float evaluate(Session sess, MnistImageBatch evaluationBatch) {
-        return sess.runner().feed("X", evaluationBatch.getPixels())
+        List<Tensor<?>> result =  sess.runner().feed("X", evaluationBatch.getPixels())
                         .feed("y", evaluationBatch.getLabel())
-                        .fetch("eval/accuracy").run()
-                        .get(0).floatValue();
-    }
+                        .fetch("eval/accuracy").run();
 
-    private void saveJavaObjectWeightsToTensorFlow(Session sess, List<WeightsTensor> layersWithWeights) {
-        Session.Runner runner = sess.runner();
-        for (int i = 0; i < layersWithWeights.size(); i++) {
-            WeightsTensor weightsTensor = layersWithWeights.get(i);
-            ((Buffer)weightsTensor.getWeights()).flip();
-            Tensor<Float> tensor = Tensor.create(weightsTensor.getShape(), weightsTensor.getWeights());
-            runner = runner.feed(weightsTensor.getLayerName(), tensor);
-        }
-        runner.addTarget("dnn/no_op").run();
+        float floatResult = result.get(0).floatValue();
+        cloaseListOfTensors(result);
+        return  floatResult;
     }
 
     @Storage(MnistGradientDescent.class)
