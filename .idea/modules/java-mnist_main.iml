@@ -10,7 +10,7 @@
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/main/java" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/../../java-mnist/src/main/resources" type="java-resource" />
     </content>
-    <orderEntry type="jdk" jdkName="10 (1)" jdkType="JavaSDK" />
+    <orderEntry type="jdk" jdkName="12" jdkType="JavaSDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow:1.13.1" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />

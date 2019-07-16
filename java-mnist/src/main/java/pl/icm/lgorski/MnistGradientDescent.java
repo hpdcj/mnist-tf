@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -28,7 +29,7 @@ public class MnistGradientDescent implements StartPoint {
     private static final int BATCH_SIZE = 50;
     private static final int IMAGE_SIZE = 28*28;
     private static final int COMMUNICATE_AFTER_N_EPOCHS = 1;
-    private static final int EPOCHS = 20;
+    private static final int EPOCHS = 30;
     public static final float LEARNING_RATE = 0.01f;
 
 
@@ -60,8 +61,8 @@ public class MnistGradientDescent implements StartPoint {
        private final long[] shape;
 
         public LayerTensor(String layerName, long[] shape){
-            OptionalLong totalSize = Arrays.stream(shape).reduce(Math::multiplyExact);
-            weights = FloatBuffer.allocate((int)totalSize.getAsLong());
+            long totalSize = Arrays.stream(shape).reduce(Math::multiplyExact).getAsLong();
+            weights = FloatBuffer.allocate((int)totalSize);
             this.layerName = layerName;
             this.shape = shape;
         }
@@ -121,12 +122,16 @@ public class MnistGradientDescent implements StartPoint {
     }
 
     private List<LayerTensor> initialWeights(Session session, String[] weightNames, MnistImageBatch primingBatch) {
-        List<Tensor<?>> resultTensors = getTensorsForWeights(session, weightNames, primingBatch);
-        final AtomicInteger i = new AtomicInteger();
-        return resultTensors.stream()
-                .map(tensor -> weightsForTensor(weightNames[i.getAndIncrement()], tensor))
-                .collect(Collectors.toList());
-
+        List<Tensor<?>> resultTensors = null;
+        try {
+            resultTensors = getTensorsForWeights(session, weightNames, primingBatch);
+            final AtomicInteger i = new AtomicInteger();
+            return resultTensors.stream()
+                    .map(tensor -> weightsForTensor(weightNames[i.getAndIncrement()], tensor))
+                    .collect(Collectors.toList());
+        } finally {
+            closeListOfTensors(resultTensors);
+        }
     }
 
     private List<Tensor<?>> getTensorsForWeights(Session session, String[] weightNames, MnistImageBatch primingBatch) {
@@ -163,7 +168,8 @@ public class MnistGradientDescent implements StartPoint {
         final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
                 .stream().limit(5_000).collect(Collectors.toList());
 
-        trainImages = divideImagesAmongThreads(trainImages);
+        trainImages = divideImagesAmongThreads(trainImages, weakScaling);
+        addGaussianNoiseToImages(trainImages);
 
         List<MnistImageBatch> trainImagesBatches = batchMnist(trainImages, BATCH_SIZE);
         final List<MnistImageBatch> testImagesBatches = batchMnist(testImages, testImages.size());
@@ -250,12 +256,15 @@ public class MnistGradientDescent implements StartPoint {
                             closeListOfTensors(weightsTensor);
                             performCommunication();
                             runner = sess.runner();
+                            List<Tensor<?>> tensorsForUpdate = new ArrayList<>();
                             for (LayerTensor weight : weights) {
-                                runner = runner.feed(weight.layerName,
-                                        Tensor.create(weight.getShape(), weight.getWeights()));
+                                Tensor tensorForUpdate = Tensor.create(weight.getShape(), weight.getWeights());
+                                tensorsForUpdate.add(tensorForUpdate);
+                                runner = runner.feed(weight.layerName, tensorForUpdate);
                             }
                             closeListOfTensors(runner.addTarget("train/apply_gradients")
                                     .feed("learning_rate", learningRateTensor).run());
+                            closeListOfTensors(tensorsForUpdate);
                         } else {
                             Session.Runner runner = sess.runner();
                             runner = runner.feed("X", batch.getPixels())
@@ -286,7 +295,14 @@ public class MnistGradientDescent implements StartPoint {
         return Tensor.create(new long[]{}, buffer);
     }
 
+    private Predicate<Integer> roundRobin = i -> i % PCJ.threadCount() == PCJ.myId();
+    private Predicate<Integer> weakScaling = i -> true;
+
     private List<MnistImage> divideImagesAmongThreads(List<MnistImage> trainImages) {
+        return divideImagesAmongThreads(trainImages, roundRobin);
+    }
+
+    private List<MnistImage> divideImagesAmongThreads(List<MnistImage> trainImages, Predicate<Integer> divisionPolicy) {
         final List<MnistImage> tmp = trainImages;
         trainImages = IntStream.range(0, trainImages.size())
                 .filter(i -> i % PCJ.threadCount() == PCJ.myId())
@@ -297,7 +313,7 @@ public class MnistGradientDescent implements StartPoint {
 
     java.util.Random r = new java.util.Random();
 
-    private void gaussianNoise(List<MnistImage> trainImages) {
+    private void addGaussianNoiseToImages(List<MnistImage> trainImages) {
         for (MnistImage image: trainImages) {
             float[] pixels = image.getPixels();
             for (int i = 0; i < pixels.length; i++) {

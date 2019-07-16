@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'application'
     id "io.freefair.lombok" version "3.1.4"
+    id "com.github.onslip.gradle-one-jar" version "1.0.5"
 }
 
 group 'pl.icm.lgorski'
@@ -12,6 +13,10 @@ mainClassName = 'pl.icm.lgorski.MnistGradientDescent'
 applicationDefaultJvmArgs = ["-Xms24g", "-Xmx24g"]
 repositories {
     mavenCentral()
+}
+
+task createFatJar(type: OneJar) {
+    mainClass = mainClassName
 }
 
 dependencies {
