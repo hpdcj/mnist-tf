@@ -17,10 +17,10 @@ if __name__ == "__main__":
     y_test = y_test.astype(np.int32)
     X_valid, X_train = X_train[:5000], X_train[5000:]
     y_valid, y_train = y_train[:5000], y_train[5000:]
-#    noise = np.random.normal (0, 0.01, [55000, 28*28])
- #   X_train = X_train + noise
-    X_train = X_train[hvd.rank()::hvd.size()]
-    y_train = y_train[hvd.rank()::hvd.size()]
+    noise = np.random.normal (0, 0.01, [len(X_train), 28*28])
+    X_train = X_train + noise
+    #X_train = X_train[hvd.rank()::hvd.size()]
+    #y_train = y_train[hvd.rank()::hvd.size()]
    
      
     n_inputs = 28*28  # MNIST
@@ -59,8 +59,8 @@ if __name__ == "__main__":
     bcast = hvd.broadcast_global_variables(0)
 
 
-    n_epochs = 20
-    batch_size = 500
+    n_epochs = 30
+    batch_size = 50
 
     def shuffle_batch(X, y, batch_size):
         rnd_idx = np.random.permutation(len(X))
