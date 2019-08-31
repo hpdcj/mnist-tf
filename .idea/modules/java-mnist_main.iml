@@ -12,12 +12,14 @@
     </content>
     <orderEntry type="jdk" jdkName="12" jdkType="JavaSDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow:1.13.1" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />
+    <orderEntry type="library" name="Gradle: org.tensorflow:tensorflow:1.13.0-rc2" level="project" />
     <orderEntry type="library" name="Gradle: org.apache.commons:commons-lang3:3.0" level="project" />
     <orderEntry type="library" name="Gradle: org.apache.commons:commons-collections4:4.3" level="project" />
     <orderEntry type="library" name="Gradle: pl.edu.icm.pcj:pcj:5.0.8" level="project" />
-    <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow:1.13.1" level="project" />
-    <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow_jni:1.13.1" level="project" />
+    <orderEntry type="library" name="Gradle: org.tensorflow:proto:1.13.0-rc2" level="project" />
+    <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow:1.13.0-rc2" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Gradle: org.projectlombok:lombok:1.18.4" level="project" />
+    <orderEntry type="library" name="Gradle: org.tensorflow:libtensorflow_jni:1.13.0-rc2" level="project" />
+    <orderEntry type="library" name="Gradle: com.google.protobuf:protobuf-java:3.5.1" level="project" />
   </component>
 </module>
