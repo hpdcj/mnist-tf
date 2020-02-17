@@ -69,3 +69,4 @@ fabric.properties
 /nodes.txt
 /.idea/
 /.idea/
+!/mnist-tf-prometheus-env/

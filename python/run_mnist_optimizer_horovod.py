@@ -5,6 +5,7 @@
 if __name__ == "__main__":
     import tensorflow as tf
     import numpy as np
+    import os
 
     import horovod.tensorflow as hvd
 
@@ -16,9 +17,21 @@ if __name__ == "__main__":
     y_train = y_train.astype(np.int32)
     y_test = y_test.astype(np.int32)
     X_valid, X_train = X_train[:5000], X_train[5000:]
-    X_train=X_train[hvd.rank()::hvd.size()]
-    y_test=y_test[hvd.rank()::hvd.size()]
     y_valid, y_train = y_train[:5000], y_train[5000:]
+
+    X_train, y_train=X_train[hvd.rank()::hvd.size()], y_train[hvd.rank()::hvd.size()]
+    X_test, y_test=X_test[hvd.rank()::hvd.size()], y_test[hvd.rank()::hvd.size()]
+
+    config = tf.ConfigProto()
+    config.gpu_options.visible_device_list = str(hvd.local_rank())
+    config.intra_op_parallelism_threads=12
+    config.inter_op_parallelism_threads=2
+    config.allow_soft_placement=True
+    os.environ["KMP_BLOCKTIME"] = "0"
+    os.environ["KMP_SETTINGS"] = "1"
+    os.environ["KMP_AFFINITY"]= "granularity=fine,verbose,compact,1,0"
+    os.environ["OMP_NUM_THREADS"]= "12"
+
 
     n_inputs = 28*28  # MNIST
     n_hidden1 = 300
