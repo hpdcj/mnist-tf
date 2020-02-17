@@ -67,3 +67,5 @@ fabric.properties
 /mnist.test.txt
 /mnist.train.txt
 /nodes.txt
+/.idea/
+/.idea/

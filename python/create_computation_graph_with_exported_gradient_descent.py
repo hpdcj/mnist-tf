@@ -55,6 +55,7 @@ if __name__ == "__main__":
         gradients = optimizer.compute_gradients(loss)
         gradients_named = tf.identity_n(gradients, name='compute_gradients')
         gradients_named_length = tf.Variable(len(gradients_named), name='compute_gradients_output_length', trainable=False)
+
         training_op = optimizer.apply_gradients(gradients, name='apply_gradients')
 
 
