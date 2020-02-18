@@ -5,9 +5,12 @@
 if __name__ == "__main__":
     import tensorflow as tf
     import numpy as np
-    import os
 
     import horovod.tensorflow as hvd
+
+    import os
+
+    from tensorflow.python.client import timeline
 
     hvd.init() #horovod
 
@@ -18,19 +21,10 @@ if __name__ == "__main__":
     y_test = y_test.astype(np.int32)
     X_valid, X_train = X_train[:5000], X_train[5000:]
     y_valid, y_train = y_train[:5000], y_train[5000:]
-
-    X_train, y_train=X_train[hvd.rank()::hvd.size()], y_train[hvd.rank()::hvd.size()]
-    X_test, y_test=X_test[hvd.rank()::hvd.size()], y_test[hvd.rank()::hvd.size()]
-
-    config = tf.ConfigProto()
-    config.gpu_options.visible_device_list = str(hvd.local_rank())
-    config.intra_op_parallelism_threads=12
-    config.inter_op_parallelism_threads=2
-    config.allow_soft_placement=True
-    os.environ["KMP_BLOCKTIME"] = "0"
-    os.environ["KMP_SETTINGS"] = "1"
-    os.environ["KMP_AFFINITY"]= "granularity=fine,verbose,compact,1,0"
-    os.environ["OMP_NUM_THREADS"]= "12"
+    #noise = np.random.normal (0, 0.01, [len(X_train), 28*28])
+    #X_train = X_train + noise
+    X_train = X_train[hvd.rank()::hvd.size()]
+    y_train = y_train[hvd.rank()::hvd.size()]
 
 
     n_inputs = 28*28  # MNIST
@@ -54,7 +48,7 @@ if __name__ == "__main__":
                                                                   logits=logits)
         loss = tf.reduce_mean(xentropy, name="loss")
 
-    learning_rate = 0.01
+    learning_rate = 0.01*hvd.size()
 
     with tf.name_scope("train"):
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
@@ -70,7 +64,7 @@ if __name__ == "__main__":
 
 
     n_epochs = 20
-    batch_size = 100
+    batch_size = 50
 
     def shuffle_batch(X, y, batch_size):
         rnd_idx = np.random.permutation(len(X))
@@ -79,16 +73,39 @@ if __name__ == "__main__":
             X_batch, y_batch = X[batch_idx], y[batch_idx]
             yield X_batch, y_batch
 
-    with tf.Session() as sess:
+    config = tf.ConfigProto()
+    config.gpu_options.visible_device_list = str(hvd.local_rank())
+    config.intra_op_parallelism_threads=12
+    config.inter_op_parallelism_threads=2
+    config.allow_soft_placement=True
+    os.environ["KMP_BLOCKTIME"] = "0"
+    os.environ["KMP_SETTINGS"] = "1"
+    os.environ["KMP_AFFINITY"]= "granularity=fine,verbose,compact,1,0"
+    os.environ["OMP_NUM_THREADS"]= "12"
+    #    summary_writer = tf.summary.FileWriterCache.get("summary/dir"+str(hvd.size())+"/out")
+    #   run_metadata = tf.RunMetadata()
+
+    with tf.Session(config=config) as sess:
         init.run()
         bcast.run()
         import time
         start = time.time()
         for epoch in range(n_epochs):
+            batch_counter = 0
             for X_batch, y_batch in shuffle_batch(X_train, y_train, batch_size):
-                sess.run(training_op, feed_dict={X: X_batch, y: y_batch})
-            acc_batch = accuracy.eval(feed_dict={X: X_batch, y: y_batch})
+                sess.run(training_op, feed_dict={X: X_batch, y: y_batch})# , options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),run_metadata=run_metadata)
             acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
-            print("Rank: ", hvd.rank(), " epoch: ", epoch, "Batch accuracy:", acc_batch, "Val accuracy:", acc_val)
+            print("Rank: ", hvd.rank(), " epoch: ", epoch, "Val accuracy:", acc_val)
+
         stop = time.time()
-        print ("Time: ", stop - start)
+
+        if hvd.rank() == 0:
+            acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
+            print ("Time: ", stop - start, "Accuracy: ", acc_val)
+
+            # Record run metadata for Tensorboard.
+
+            # Save trace for Chrome.
+            #trace = timeline.Timeline(run_metadata.step_stats).generate_chrome_trace_format(show_memory=True)
+            #with open("trace.json"+str(hvd.size()), "w") as f:
+            #    f.write(trace)
