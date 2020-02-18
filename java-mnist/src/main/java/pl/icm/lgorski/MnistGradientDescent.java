@@ -9,6 +9,7 @@ import org.tensorflow.Graph;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
 import org.tensorflow.framework.ConfigProto;
+import org.tensorflow.framework.GraphDef;
 
 import java.io.IOException;
 import java.nio.Buffer;
@@ -19,6 +20,8 @@ import java.nio.file.Paths;
 import java.sql.SQLOutput;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -155,14 +158,47 @@ public class MnistGradientDescent implements StartPoint {
                 .forEach(Tensor::close);
     }
 
+    private class Configuration {
+        public void prepare () {
+            String graphDevice = System.getProperty("pcj.mnist.device", "cpu");
+            String communication = System.getProperty("pcj.mnist.communication", "sync");
+
+            chooseDeviceForGraph(graphDevice);
+
+            chooseCommunicationRoutine(communication);
+        }
+
+        private void chooseCommunicationRoutine(String communication) {
+            if (communication.equals("sync")) {
+                performCommunication = MnistGradientDescent.this::performCommunication;
+            } else if (communication.equals("async")) {
+                performCommunication = MnistGradientDescent.this::performCommunicationAsync;
+            }
+        }
+
+        private void chooseDeviceForGraph(String graphDevice) {
+            if (graphDevice.equals("cpu")) {
+                graphModifier = MnistGradientDescent.this::doNotModifyGraph;
+            } else if (graphDevice.equals("gpu2")) {
+                graphModifier = MnistGradientDescent.this::pinGraphToDoubleGPU;
+            } else if (graphDevice.equals("gpu")) {
+                graphModifier = MnistGradientDescent.this::pinGraphToSingleGPU;
+            }
+        }
+
+        Function<byte[], byte[]> graphModifier = null;
+        Runnable performCommunication = null;
+    }
     @Override
     public void main() throws Throwable {
+        Configuration configuration = new Configuration();
+
         myId = PCJ.myId();
         threadCount = PCJ.threadCount();
 
         layersWeightCommunicatedAsync = new List[threadCount];
 
-        final byte[] graphDef = Files.readAllBytes(Paths.get("../graph.pb"));
+        final byte[] graphDef = configuration.graphModifier.apply(Files.readAllBytes(Paths.get("../graph.pb")));
 
         // MNIST's main dataset contains of 60 000 images. Of that we are using 55 000 for training
         // and using 5 000 as validation set. Cf. A. Géron, "Hands-On Machine Learning with
@@ -443,7 +479,28 @@ public class MnistGradientDescent implements StartPoint {
         PCJ.start(MnistGradientDescent.class, new NodesDescription("../nodes.txt"));
     }
 
+    private byte[] pinGraphToSingleGPU (byte[] graphDef) {
+        return pinGraphToGPU(graphDef, "/gpu:0");
+    }
 
+    private byte[] pinGraphToDoubleGPU (byte[] graphDef) {
+        return pinGraphToGPU(graphDef, "/gpu:" + (PCJ.myId() % 2));
+    }
+    //cf. https://stackoverflow.com/questions/47799972/tensorflow-java-multi-gpu-inference
+    private byte[] pinGraphToGPU (byte[] graphDef, String device) {
+        try {
+            GraphDef.Builder builder = GraphDef.parseFrom(graphDef).toBuilder();
+            for (int i = 0; i < builder.getNodeCount(); ++i) {
+                builder.getNodeBuilder(i).setDevice(device);
+            }
+            return builder.build().toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
+    private byte[] doNotModifyGraph (byte[] graphDef) {
+        return graphDef;
+    }
 
 }
