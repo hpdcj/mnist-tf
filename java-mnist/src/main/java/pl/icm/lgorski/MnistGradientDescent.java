@@ -476,7 +476,11 @@ public class MnistGradientDescent implements StartPoint {
     }
 
     public static void main (String[] args) throws IOException {
-        PCJ.start(MnistGradientDescent.class, new NodesDescription("../nodes.txt"));
+        String nodeFile = "../nodes.txt";
+        if (args.length > 1) {
+            nodeFile = args[1];
+        }
+        PCJ.start(MnistGradientDescent.class, new NodesDescription(nodeFile));
     }
 
     private byte[] pinGraphToSingleGPU (byte[] graphDef) {

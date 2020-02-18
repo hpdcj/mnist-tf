@@ -19,8 +19,8 @@ if __name__ == "__main__":
     X_test = X_test.astype(np.float32).reshape(-1, 28*28) / 255.0
     y_train = y_train.astype(np.int32)
     y_test = y_test.astype(np.int32)
-    X_valid, X_train = X_train[:5000], X_train[5000:]
-    y_valid, y_train = y_train[:5000], y_train[5000:]
+    # X_valid, X_train = X_train[:5000], X_train[5000:]
+    # y_valid, y_train = y_train[:5000], y_train[5000:]
     #noise = np.random.normal (0, 0.01, [len(X_train), 28*28])
     #X_train = X_train + noise
     X_train = X_train[hvd.rank()::hvd.size()]
@@ -73,8 +73,11 @@ if __name__ == "__main__":
             X_batch, y_batch = X[batch_idx], y[batch_idx]
             yield X_batch, y_batch
 
+
     config = tf.ConfigProto()
-    config.gpu_options.visible_device_list = str(hvd.local_rank())
+    import sys
+    if (len(sys.argv) > 1 and sys.argv[1] == "gpu"):
+        config.gpu_options.visible_device_list = str(hvd.local_rank())
     config.intra_op_parallelism_threads=12
     config.inter_op_parallelism_threads=2
     config.allow_soft_placement=True
@@ -94,13 +97,13 @@ if __name__ == "__main__":
             batch_counter = 0
             for X_batch, y_batch in shuffle_batch(X_train, y_train, batch_size):
                 sess.run(training_op, feed_dict={X: X_batch, y: y_batch})# , options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),run_metadata=run_metadata)
-            acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
+            acc_val = accuracy.eval(feed_dict={X: X_test, y: y_test})
             print("Rank: ", hvd.rank(), " epoch: ", epoch, "Val accuracy:", acc_val)
 
         stop = time.time()
 
         if hvd.rank() == 0:
-            acc_val = accuracy.eval(feed_dict={X: X_valid, y: y_valid})
+            acc_val = accuracy.eval(feed_dict={X: X_test, y: y_test})
             print ("Time: ", stop - start, "Accuracy: ", acc_val)
 
             # Record run metadata for Tensorboard.
