@@ -192,21 +192,22 @@ public class MnistGradientDescent implements StartPoint {
     @Override
     public void main() throws Throwable {
         Configuration configuration = new Configuration();
+        configuration.prepare();
 
         myId = PCJ.myId();
         threadCount = PCJ.threadCount();
 
         layersWeightCommunicatedAsync = new List[threadCount];
 
-        final byte[] graphDef = configuration.graphModifier.apply(Files.readAllBytes(Paths.get("../graph.pb")));
+        final byte[] graphDef = configuration.graphModifier.apply(Files.readAllBytes(Paths.get("graph.pb")));
 
         // MNIST's main dataset contains of 60 000 images. Of that we are using 55 000 for training
         // and using 5 000 as validation set. Cf. A. Géron, "Hands-On Machine Learning with
         // SciKit-Learn and Tensorflow",
-        List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
-                .stream().skip(5_000).collect(Collectors.toList());
-        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("../mnist.train.txt")))
-                .stream().limit(5_000).collect(Collectors.toList());
+        List<MnistImage> trainImages = readMnistImages(Files.readAllLines(Paths.get("mnist.train.txt.in")))
+                .stream()./*skip(5_000).*/collect(Collectors.toList());
+        final List<MnistImage> testImages = readMnistImages(Files.readAllLines(Paths.get("mnist.test.txt.in")))
+                .stream()/*.limit(5_000)*/.collect(Collectors.toList());
 
         trainImages = divideImagesAmongThreads(trainImages, roundRobin);
       //  addGaussianNoiseToImages(trainImages);
@@ -223,6 +224,7 @@ public class MnistGradientDescent implements StartPoint {
             graph.importGraphDef(graphDef);
             for (String runType : new String[] { "warmUp", "mainRun"}) {
                 commTime = 0;
+                accuracyTiming = 0;
                 AtomicInteger imagesProcessed = new AtomicInteger();
                 AtomicInteger batchesProcessed = new AtomicInteger();
                 closeListOfTensors(sess.runner().addTarget("init").run());
@@ -298,7 +300,7 @@ public class MnistGradientDescent implements StartPoint {
                             List<Tensor<?>> weightsTensor = runner.run();
                             saveTensorFlowWeightsToJavaObject(weightsTensor, weights);
                             closeListOfTensors(weightsTensor);
-                            performCommunication();
+                            configuration.performCommunication.run();
                             runner = sess.runner();
                             List<Tensor<?>> tensorsForUpdate = new ArrayList<>();
                             for (LayerTensor weight : weights) {
@@ -329,6 +331,7 @@ public class MnistGradientDescent implements StartPoint {
                 if (myId == 0) {
                     System.out.println("Time(" + runType + ") = " + (stop - start) * 1e-9 +
                             " Communication time = " + commTime +
+                            " Accuracy computing time = " + accuracyTiming * 1e-9 +
                             " accuracy = " + accuracy +
                             " images processed (per thread) = " + imagesProcessed.get() +
                             " batches processed (per thread) = " + batchesProcessed.get());
@@ -372,13 +375,16 @@ public class MnistGradientDescent implements StartPoint {
     }
 
 
+    long accuracyTiming = 0;
     private float evaluate(Session sess, MnistImageBatch evaluationBatch) {
+        accuracyTiming -= System.nanoTime();
         List<Tensor<?>> result =  sess.runner().feed("X", evaluationBatch.getPixels())
                         .feed("y", evaluationBatch.getLabel())
                         .fetch("eval/accuracy").run();
 
         float floatResult = result.get(0).floatValue();
         closeListOfTensors(result);
+        accuracyTiming += System.nanoTime();
         return  floatResult;
     }
 
@@ -477,8 +483,8 @@ public class MnistGradientDescent implements StartPoint {
 
     public static void main (String[] args) throws IOException {
         String nodeFile = "../nodes.txt";
-        if (args.length > 1) {
-            nodeFile = args[1];
+        if (args.length > 0) {
+            nodeFile = args[0];
         }
         PCJ.start(MnistGradientDescent.class, new NodesDescription(nodeFile));
     }

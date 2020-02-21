@@ -6,7 +6,7 @@ if __name__ == "__main__":
     import tensorflow as tf
     import numpy as np
 
-    import horovod.tensorflow as hvd
+    import horovod as hvd
 
     import os
 
