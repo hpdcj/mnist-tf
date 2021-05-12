@@ -1,4 +1,4 @@
-#based on Hands on Sci-kit and Tensorflow...
+#based on A. Geron, Hands on Scikit-learn and Tensorflow, 1st ed. License for original source is available at: https://github.com/ageron/handson-ml/blob/master/LICENSE
 
 if __name__ == "__main__":
     import tensorflow as tf
